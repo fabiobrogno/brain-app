@@ -8,7 +8,7 @@ import { join, basename, relative, sep, isAbsolute } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { HttpFehler, MAX_DATEI, inboxOrdnerVon, vorlagenOrdnerVon, inboxHinweisVon, loese, imVault, falte, kindUmgebung, supportOrdner, kernOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
+import { HttpFehler, MAX_DATEI, wikiArchivOrdnerVon, inboxOrdnerVon, vorlagenOrdnerVon, inboxHinweisVon, loese, imVault, falte, kindUmgebung, supportOrdner, kernOrdner, BEARBEITBAR, generiertName, wikiGeneriert, gesperrterName } from "./basis.mjs";
 import { pruefeText, leseKopf } from "./pruefung.mjs";
 import { heuteIso } from "./zeit.mjs";
 import { zielZuNeuerNotiz, ordnerVonPfad } from "./wikilink.mjs";
@@ -445,6 +445,14 @@ export function oeffneVault(vaultPfad, opts = {}) {
     return /^90_/.test(erste) || erste === verwaltetKonfig.vorlagen || (erste === verwaltetKonfig.inbox && t.length > 2 && t[1].startsWith("_")) || /(^|\/)((claude|agents|gemini)\.md|\.cursorrules|copilot-instructions\.md)$/i.test(rel);
   };
   const darfQuelle = (rel) => !verwaltet(rel);
+  // KI-Vorschläge (Kandidaten, Ordnerliste, Ziele, lokale Vorschläge): dieselbe Regel wie für Verlinken-Ziele (verwaltete Orte, Posteingang, „_“-Dateien) plus Wiki und Archiv aus der Konfiguration
+  const kiOrtErlaubt = (rel, mitPosteingang = false) => {
+    if (typeof rel !== "string" || !rel || rel.startsWith("/") || rel.split("/").includes("..")) return false;
+    if (verwaltet(rel)) return false;
+    const { wiki, archiv } = wikiArchivOrdnerVon(wurzel);
+    const erste = falte(rel.split("/")[0]);
+    return ![wiki, archiv, "09_wiki", "90_archiv"].some((a) => erste === falte(a)) && (mitPosteingang || erste !== verwaltetKonfig.inbox) && !rel.split("/").some((t) => t.startsWith("_") || t.startsWith("."));
+  };
   const darfZiel = (rel) => !verwaltet(rel) && falte(rel.split("/")[0]) !== (verwaltetKonfig?.inbox ?? falte(inboxOrdnerVon(wurzel))) && !rel.split("/").pop().startsWith("_");
   const holeErwaehnungen = () => erwaehnungsDienst || (erwaehnungsDienst = erzeugeErwaehnungen({ wurzel, index: holeSuchindex, darfZiel, darfQuelle }));
   const erwPfad = (p) => { if (typeof p !== "string" || !p) throw new HttpFehler(400, "Der Pfad fehlt."); const l = loese(wurzel, p); if (!BEARBEITBAR.test(l.rel)) throw new HttpFehler(415, "Das ist keine Notiz."); return l.rel; };
@@ -484,6 +492,22 @@ export function oeffneVault(vaultPfad, opts = {}) {
     }
     if (await selbst.abgleichBeschaeftigt()) throw new HttpFehler(409, "Gerade läuft ein Abgleich oder eine Zusammenführung. Kortex verlinkt nichts, bis sie abgeschlossen ist.", { art: "beschaeftigt" });
     const r = await dateiAktionen.verlinke({ vorschau: a.vorschau === true, ...(typeof a.token === "string" ? { token: a.token } : {}) }, (lies) => holeErwaehnungen().planeVerlinken(ziel, auswahl, lies));
+    if (r.geaendert && r.geaendert.length && suchindex) suchindex.aendere(r.geaendert);
+    return r;
+  }
+
+  // Nur für Kortex-eigene Module (KI-Vorschläge, nie eine Route): EINE Notiz ändern, über denselben sicheren Weg wie Verlinken — Inhalts-Hash muss stimmen (sonst 409), Journal mit vorher/nachher,
+  // ein Eintrag im Aktivitätsprotokoll mit Rückgängig. a: { pfad, basisHash, aendere(text) → neuer Text, beschreibung } — `aendere` und `beschreibung` kommen aus dem Code, nie aus einer Anfrage.
+  async function aendereNotiz(a) {
+    const rel = erwPfad(a.pfad);
+    if (await selbst.abgleichBeschaeftigt()) throw new HttpFehler(409, "Gerade läuft ein Abgleich oder eine Zusammenführung. Kortex ändert nichts, bis sie abgeschlossen ist.", { art: "beschaeftigt" });
+    const r = await dateiAktionen.verlinke({}, async (lies) => {
+      const n = lies(rel);
+      if (n.hash !== a.basisHash) throw new HttpFehler(409, "Die Notiz hat sich geändert. Hole den Vorschlag neu.", { art: "veraltet" });
+      const neu = a.aendere(n.text);
+      if (typeof neu !== "string" || neu === n.text) return { dateien: [], uebersprungen: [] };
+      return { dateien: [{ pfad: n.pfad, text: neu, anzahl: 1, zeilen: [], titel: titelAus(n.pfad, n.text) }], ziel: null, zielTitel: null, beschreibung: a.beschreibung };
+    });
     if (r.geaendert && r.geaendert.length && suchindex) suchindex.aendere(r.geaendert);
     return r;
   }
@@ -752,10 +776,10 @@ export function oeffneVault(vaultPfad, opts = {}) {
       if (Array.isArray(r.geaendert) && r.geaendert.length) tagIndex.aendere(r.geaendert);
       return r;
     }), exportiere: exportFn.exportiere,
-    erwaehnungen, erwaehntVon, erwaehnungenLinks, verlinke: mitRuhe(verlinke), neuigkeiten, neuigkeitenGelesen, umbenennen: mitRuhe(dateiAktionen.umbenennen), verschieben: mitRuhe(dateiAktionen.verschieben), loeschen: mitRuhe(dateiAktionen.loeschen),
+    erwaehnungen, erwaehntVon, erwaehnungenLinks, verlinke: mitRuhe(verlinke), aendereNotiz: mitRuhe(aendereNotiz), kiOrtErlaubt, neuigkeiten, neuigkeitenGelesen, umbenennen: mitRuhe(dateiAktionen.umbenennen), verschieben: mitRuhe(dateiAktionen.verschieben), loeschen: mitRuhe(dateiAktionen.loeschen),
     papierkorb: dateiAktionen.papierkorbListe, papierkorbWiederherstellen: mitRuhe(dateiAktionen.papierkorbWiederherstellen), papierkorbEndgueltig: dateiAktionen.papierkorbEndgueltig, papierkorbHinweisErledigt: dateiAktionen.papierkorbHinweisErledigt, aktionenOrt: dateiAktionen.aktionenOrt,
     vorgangZurueck: mitRuhe((a) => nichtImAbgleich(() => dateiAktionen.vorgangZurueck(a.id, a))), vorgangWieder: mitRuhe((a) => nichtImAbgleich(() => dateiAktionen.vorgangWieder(a.id, a))), vorgangMoeglich: dateiAktionen.vorgangMoeglich,
-    posteingangVerwerfen: posteingang.verwerfen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
+    posteingangVerwerfen: posteingang.verwerfen, posteingangZuruecklegen: posteingang.zuruecklegen, posteingangSpaeter: posteingang.spaeter, posteingangUebernehmen: posteingang.uebernehmen,
     aufgaben: aufgabenFn.aufgaben, aufgabeAnlegen: aufgabenFn.anlegen, aufgabeAendern: aufgabenFn.aendern, aufgabenArchivieren: aufgabenFn.archivieren, aufgabenFuerKi: aufgabenFn.fuerKi, aufgabenOrdnerName: aufgabenFn.ordnerName, aufgabePfad: aufgabenFn.findePfad,
     notizen: async () => ({ ...(await notizIndex.notizen()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), vorlagenOrdner: vorlagenOrdnerVon(wurzel), ...hinweisFeld() }), notizKontext: notizIndex.kontext, typen: notizIndex.typen, ansichten: notizIndex.ansichten,
     indexAlles: async () => ({ ...(await notizIndex.alles()), aufgabenOrdner: await aufgabenFn.ordnerName(), inboxOrdner: inboxOrdnerVon(wurzel), vorlagenOrdner: vorlagenOrdnerVon(wurzel), ...hinweisFeld() }), teilIndex,

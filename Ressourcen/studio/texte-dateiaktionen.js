@@ -21,7 +21,7 @@ export const TD = {
   },
   toast: {
     umbenannt: "Umbenannt", verschoben: "Verschoben", papierkorb: "In den Papierkorb gelegt", rueckgaengig: "Rückgängig", wieder: "Wiederherstellen",
-    zurueck: { umbenennen: "Umbenennen rückgängig gemacht", verschieben: "Verschieben rückgängig gemacht", loeschen: "Aus dem Papierkorb zurückgelegt" },
+    zurueck: { umbenennen: "Umbenennen rückgängig gemacht", verschieben: "Verschieben rückgängig gemacht", verlinken: "Verlinken rückgängig gemacht", aendern: "Änderung rückgängig gemacht", loeschen: "Aus dem Papierkorb zurückgelegt" },
     verweiseAngepasst: (n) => `${nz(n, "Verweis", "Verweise")} angepasst`,
     fehler: "Das hat nicht geklappt.", belegt: "Dort gibt es schon etwas mit diesem Namen.",
     geaendertTitel: "Seit dem Umbenennen wurde weitergearbeitet",

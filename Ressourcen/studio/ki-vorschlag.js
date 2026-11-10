@@ -30,9 +30,9 @@ export const kiFunktionen = (bereit) => KI_FUNKTIONEN.filter((f) => (bereit?.fun
 
 // ---------- Kontingent-Zeile ----------
 // Ruhig und immer gleich hoch (eine Zeile): Mini-Balken + Satz. ab 80 % ein Satz in Gelb, bei 100 % mit Rücksetzzeit. `voll` sagt, ob der Knopf aus sein soll.
-export function kontingentZeile({ api, konto, abo = null, beiAenderung = null } = {}) {
+export function kontingentZeile({ api, konto, abo = null, beiAenderung = null, name = "kontingent" } = {}) { // name: Wert von data-kiv (mehrere Zeilen auf einer Seite lassen sich so getrennt ansprechen)
   const kt = kontingentStand(api);
-  const el = h("div", { klasse: "kiv-kt", "data-kiv": "kontingent" });
+  const el = h("div", { klasse: "kiv-kt", "data-kiv": name });
   const ergebnis = { knoten: el, voll: false, stufe: "grau", zeichne };
   function zeichne() {
     if (!konto) { el.replaceChildren(); return; }
@@ -45,7 +45,7 @@ export function kontingentZeile({ api, konto, abo = null, beiAenderung = null } 
     // Die Zeile erscheint nur mit einer echten Zahl; ohne Stand bleibt sie leer und unsichtbar (kein Sperren, kein Platzhaltertext)
     if (!k.hatWerte) { el.dataset.leer = "1"; el.replaceChildren(); beiAenderung?.(ergebnis); return; }
     delete el.dataset.leer;
-    el.replaceChildren(miniBalken(e, jetzt), h("span", { klasse: "kiv-kt-text", "data-kiv": "kontingent-text", text: satz }));
+    el.replaceChildren(miniBalken(e, jetzt), h("span", { klasse: "kiv-kt-text", "data-kiv": `${name}-text`, text: satz }));
     beiAenderung?.(ergebnis);
   }
   const ab = kt.abonniere(() => zeichne());
@@ -153,6 +153,34 @@ export function starteVorschlag({ api, eingabe, beiStart, wiederholeBeiLaeuft = 
         continue;
       }
       if (st.fertig) { ende = true; return { start, ergebnis: st.ergebnis || { ok: false, fehler: TV.lauf.fehlerAllgemein } }; }
+    }
+  })();
+  return { fertig, abbrechen };
+}
+
+// ---------- Stapel („Für alle“, K3) ----------
+// Die Werkstatt arbeitet die Einträge nacheinander ab (höchstens 10, eine Anfrage zur Zeit) und führt den Stand; hier wird nur gefragt. eingabe: { funktion, pfade, konto }.
+// beiStand(stand): bei jeder Änderung (stand.eintraege = Ergebnisse je Pfad, stand.erledigt/von/aktuell) · → { fertig: Promise<stand>, abbrechen }. `fertig` wirft nur, wenn der Start abgelehnt wird.
+export function starteStapel({ api, eingabe, beiStand } = {}) {
+  let id = null, abgebrochen = false;
+  const abbrechen = async () => { abgebrochen = true; if (id) { try { await api.kiVorschlagAbbrechen(id); } catch { /* die Werkstatt beendet den Stapel sonst nach dem laufenden Eintrag */ } } };
+  const fertig = (async () => {
+    const start = await api.kiVorschlagStart(eingabe);
+    id = start.id;
+    if (abgebrochen) await abbrechen();
+    let version = -1, fehlversuche = 0;
+    for (;;) {
+      let st;
+      try { st = await api.kiVorschlagStand(id, version); fehlversuche = 0; }
+      catch (e) {
+        if (e?.status === 404) return { stapel: true, fertig: true, abgebrochen: true, verloren: true, von: start.von, erledigt: 0, eintraege: {}, ausgenommen: 0 }; // Vault gewechselt: alles verworfen
+        if (++fehlversuche >= 4) return { stapel: true, fertig: true, abgebrochen: true, verloren: true, gestoppt: TV.lauf.verbindung, von: start.von, erledigt: 0, eintraege: {}, ausgenommen: 0 };
+        await new Promise((ok) => setTimeout(ok, 400 * fehlversuche));
+        continue;
+      }
+      version = st.version;
+      try { beiStand?.(st); } catch (e) { console.error(e); }
+      if (st.fertig) return st;
     }
   })();
   return { fertig, abbrechen };

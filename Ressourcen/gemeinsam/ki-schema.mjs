@@ -64,6 +64,24 @@ const istBeleg = (beleg, text, vorbild = null) => {
   return b.length >= 3 && normText(text).includes(b);
 };
 
+// Wo steht der Beleg im Text? → { vor, treffer, nach } (Umgebung auf einzeiligen Text gekürzt, mit „…“ an den Rändern) oder null. Für „Warum?“: Der Beleg wird wörtlich hervorgehoben, nie die Antwort der KI.
+// Gesucht wird genau wie bei der Prüfung (NFC, Leerraum zusammengefasst); der Treffer ist der Text, wie er im Eintrag steht.
+export function belegStelle(text, beleg, umfeld = 90) {
+  const t = String(text ?? "").normalize("NFC"), b = normText(beleg);
+  if (b.length < 3) return null;
+  let norm = "", karte = [], leer = true;
+  for (let i = 0; i < t.length; i++) {
+    if (/\s/.test(t[i])) { if (!leer) { norm += " "; karte.push(i); leer = true; } }
+    else { norm += t[i]; karte.push(i); leer = false; }
+  }
+  const pos = norm.indexOf(b);
+  if (pos < 0) return null;
+  const von = karte[pos], bis = karte[pos + b.length - 1] + 1;
+  const flach = (s) => s.replace(/\s+/g, " ");
+  const vor = flach(t.slice(Math.max(0, von - umfeld), von)), nach = flach(t.slice(bis, bis + umfeld));
+  return { vor: (von > umfeld ? "…" : "") + (von > umfeld ? vor.replace(/^\S*\s/, "") : vor.replace(/^\s+/, "")), treffer: flach(t.slice(von, bis)), nach: nach.replace(/\s+$/, "") + (bis + umfeld < t.length ? "…" : "") };
+}
+
 // ---------- ki: nein ----------
 // Die Prüfung steht in notizen.mjs (der Notiz-Index merkt sich das Ergebnis je Notiz); hier nur weitergereicht.
 export { istKiNein, istKiNeinWert };
@@ -126,6 +144,8 @@ export function warnungenFuerErsatz(auswahl, ersatz) {
   return w;
 }
 
+// Wörter, die YAML als Zahl oder Sonderwert liest (1e5, 0x1f, 0o7, 0b1, .inf, .nan, 1_000, 3.14): als Tag im Kopf kämen sie als Zahl heraus
+const ZAHLAEHNLICH = /^[+-]?(?:\d[\d_]*(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$|^[+-]?0[xob][\da-f_]+$|^[+-]?\.(?:inf|nan)$/i;
 const MIT_VORSCHAU = ["vorschau"]; // der Platzhalter der Vorschau (#88) darf seine Marke mitschicken
 const vorschauOk = (o) => !("vorschau" in o) || typeof o.vorschau === "boolean";
 
@@ -200,7 +220,8 @@ function pruefeEinzel(funktion, x, ctx) {
   } else { // tags
     if (hat("ziel") || hat("aufgabe") || !Array.isArray(x.tags) || x.tags.length < 1 || x.tags.length > LIMITS.tags) return null;
     const tags = [];
-    for (const t of x.tags) { const n = pruefeTagName(typeof t === "string" && !GEFAEHRLICH.test(t) ? t : null); if (n === null) return null; if (!tags.includes(n)) tags.push(n); }
+    // Ein Tag der KI beginnt mit einem Buchstaben oder einer Ziffer und enthält einen Buchstaben (nie „---“ oder „_“: ein Tag wird in den Kopf der Notiz geschrieben)
+    for (const t of x.tags) { const n = pruefeTagName(typeof t === "string" && !GEFAEHRLICH.test(t) ? t : null); if (n === null || !/^[\p{L}\p{N}]/u.test(n) || !/\p{L}/u.test(n) || /^(?:null|true|false|yes|no|on|off|y|n)$/i.test(n) || n.split("/").some((t) => ZAHLAEHNLICH.test(t))) return null; if (!tags.includes(n)) tags.push(n); }
     aus.tags = tags;
   }
   aus.schluessel = `${aus.art}|${aus.ziel ?? ""}|${aus.aufgabe ? aus.aufgabe.text : ""}|${aus.tags ? aus.tags.join(",") : ""}`;

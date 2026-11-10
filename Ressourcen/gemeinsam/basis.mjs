@@ -91,6 +91,13 @@ function inboxAuswerten(wurzel) {
   } catch { return { name: INBOX_STANDARD, abgelehnt: false }; }
 }
 export const inboxOrdnerVon = (wurzel) => inboxAuswerten(wurzel).name;
+// Wiki- und Archivordner eines Vaults (brain.config.json → ordner.wiki / ordner.archiv, sonst 09_wiki und 90_archiv). Wirft nie.
+export function wikiArchivOrdnerVon(wurzel) {
+  let cfg = null;
+  try { const datei = join(wurzel, "brain.config.json"); const st = lstatSync(datei); if (st.isFile() && st.size <= 1024 * 1024) cfg = JSON.parse(readFileSync(datei, "utf8").replace(/^\uFEFF/, "")); } catch { cfg = null; }
+  const nimm = (wert, standard) => (istOrdnerName(wert) ? wert : standard);
+  return { wiki: nimm(cfg?.ordner?.wiki, nimm(cfg?.wiki?.ordner, "09_wiki")), archiv: nimm(cfg?.ordner?.archiv, "90_archiv") };
+}
 
 // Der Vorlagenordner eines Vaults (Notizen darin sind Vorlagen für „Neue Notiz aus Vorlage“, keine Notizen): brain.config.json → ordner.vorlagen, sonst 01_vorlagen wie bisher.
 // Er ist eine Eigenschaft des Vaults: ein vorhandener Ordner „Vorlagen“ in einem alten Vault bleibt Notizen, solange der Vault ihn nicht so einstellt; ein neuer Beispiel-Vault

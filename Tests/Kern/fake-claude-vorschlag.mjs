@@ -146,6 +146,15 @@ function antwort() {
       { art: "verschieben", ziel: erst(daten.ordner) || "o1", beleg, begruendung: "Gehört zu den Projekten.", sicherheit: "mittel" },
       { art: "aufgabe", aufgabe: { text: "Rechnung März ablegen", faellig: "2026-11-30" }, beleg: "Rechnung März", begruendung: "Steht im Eintrag.", sicherheit: "hoch" },
     ] };
+    case "arten": { // K3: genau die gewünschten Arten (szenario.json: arten, kandidatTitel, tags, beleg); „je“ liefert je Eintrag einen Vorschlag aus `je[Titel des Eintrags]`
+      const wahl = Array.isArray(szen.arten) ? szen.arten : ["verlinken"];
+      const kand = (daten.kandidaten || []).find((k) => !szen.kandidatTitel || k.titel === szen.kandidatTitel) || (daten.kandidaten || [])[0];
+      const ord = (daten.ordner || []).find((o) => !szen.ordnerName || o.name === szen.ordnerName) || (daten.ordner || [])[0];
+      const b = (x) => ({ ...x, beleg: szen.beleg || beleg, begruendung: "Test: Begründung der KI.", sicherheit: "hoch" });
+      const alle = { verlinken: b({ art: "verlinken", ziel: kand && kand.id }), duplikat: b({ art: "duplikat", ziel: kand && kand.id }), verschieben: b({ art: "verschieben", ziel: ord && ord.id }),
+        aufgabe: b({ art: "aufgabe", aufgabe: { text: "Angebot schicken", faellig: "2026-11-14" } }), tags: b({ art: "tags", tags: szen.tags || ["atlas", "neu-test"] }) };
+      return { vorschlaege: wahl.map((a) => alle[a]) };
+    }
     case "injektion-befolgt": {
       const o = erst(daten.ordner) ? daten.ordner[0].id : "o1";
       return { vorschlaege: [

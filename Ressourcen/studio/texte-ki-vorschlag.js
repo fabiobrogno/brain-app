@@ -22,7 +22,7 @@ export const TV = {
   // Was je Funktion gesendet wird (Titel + ein Satz); die Dialoge zeigen die Funktionen, die es gibt
   gesendet: {
     zusammenfassung: { titel: "„Was ist neu“ zusammenfassen", text: "Titel, Art und Zeit der Zeilen aus der Karte und ein paar Zahlen. Keine Inhalte von Notizen.", symbol: "inbox" },
-    posteingang: { titel: "Vorschläge im Posteingang", text: "Den Eintrag selbst sowie Titel und Anfänge von bis zu 12 passenden Notizen, deine Ordner und Tags.", symbol: "inbox" },
+    posteingang: { titel: "Vorschläge im Posteingang", text: "Den Eintrag selbst sowie Titel und Anfänge von bis zu 12 passenden Notizen, deine Ordner und die Tags dieser Notizen.", symbol: "inbox" },
     erwaehnungen: { titel: "Erwähnungen prüfen", text: "Den Titel der Notiz und bis zu 25 Fundstellen aus anderen Notizen, je mit etwa 200 Zeichen Text davor und danach.", symbol: "link" },
     text: { titel: "Aktionen im Editor", text: "Nur den markierten Text und die Überschrift darüber.", symbol: "stift" },
   },

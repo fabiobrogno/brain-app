@@ -16,8 +16,10 @@ import { randomBytes, createHmac, createHash, timingSafeEqual } from "node:crypt
 import { HttpFehler, inboxOrdnerVon, vorlagenOrdnerVon, falte, vorschauOrdnerAus } from "../gemeinsam/basis.mjs";
 import { aktivesKonto, vorschlaegeFuer, setzeVorschlaege, echterOrt } from "../gemeinsam/ki-konten.mjs";
 import { kennungVault, melde } from "../gemeinsam/aktivitaet.mjs";
-import { titelAus, kopfLaenge } from "../gemeinsam/notizen.mjs";
-import { VERSION, TEXT_AKTIONEN, SPRACHEN, LIMITS, schemaFuer, pruefeAntwort, warnungenFuerErsatz, parseJsonAntwort, istKiNein, istKiNeinWert, kandidatIds, ordnerIds } from "../gemeinsam/ki-schema.mjs";
+import { titelAus, wikilinkZiele, kopfLaenge } from "../gemeinsam/notizen.mjs";
+import { extrahiereTags, fuegeTagsHinzu } from "../gemeinsam/tags.mjs";
+import { baueWikiIndex, linkText, ordnerVonPfad } from "../gemeinsam/wikilink.mjs";
+import { VERSION, TEXT_AKTIONEN, SPRACHEN, LIMITS, schemaFuer, pruefeAntwort, warnungenFuerErsatz, parseJsonAntwort, istKiNein, istKiNeinWert, kandidatIds, ordnerIds, belegStelle } from "../gemeinsam/ki-schema.mjs";
 import { MODELLE, ABBRUCH_TEXT, sauberText, ganz, nfc, erzeugeKontenZugriff, legeTempAn, starteKiLauf, baueFrageUmgebung } from "./ki-kern.mjs";
 
 export { VERSION };
@@ -27,6 +29,7 @@ export const GRENZEN = {
   ausgabe: 256 * 1024, zeile: 128 * 1024,           // Bytes von stdout insgesamt / je Zeile
   leerlauf: 20_000, longPoll: 800, turns: 3,
   ablauf: 15 * 60_000, speicher: 200,               // Vorschläge: Gültigkeit, höchstens je Vault
+  stapel: 10, lokal: 40, tagsListe: 40,             // „Für alle“: höchstens so viele Einträge auf einmal · lokale Vorschläge: Einträge je Anfrage · Tags ähnlicher Notizen im Paket
   budgetUsd: { posteingang: { haiku: 0.15, sonnet: 0.15 }, text: { haiku: 0.15, sonnet: 0.6 }, zusammenfassung: { haiku: 0.10, sonnet: 0.10 }, erwaehnungen: { haiku: 0.10, sonnet: 0.10 } },
 };
 const FUNKTIONEN_K0 = ["posteingang", "text", "zusammenfassung", "erwaehnungen"];
@@ -84,6 +87,24 @@ const leseDatum = (v) => { try { return v.heute(); } catch { return ""; } };
 const wortSet = (s) => new Set(nfc(s).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4));
 const schneideVorn = (s, n) => { if (s.length <= n) return s; const a = s.slice(s.length - n); return /^[\uDC00-\uDFFF]/.test(a) ? a.slice(1) : a; };
 const schneide = (s, n) => (s.length <= n ? s : s.slice(0, /[\uD800-\uDBFF]/.test(s[n - 1]) ? n - 1 : n));
+// Ordner (höchstens zwei Ebenen) mit der Zahl ihrer Notizen, häufigste zuerst; keine versteckten (.x) und keine Verwaltungsordner (_x). → [{ pfad, n }]
+const ordnerAus = (pool) => {
+  const zaehl = new Map();
+  for (const z of pool) {
+    const teile = z.pfad.split("/").slice(0, -1);
+    if (!teile.length || teile.some((t) => t.startsWith(".") || t.startsWith("_"))) continue;
+    const ord = teile.slice(0, 2).join("/");
+    zaehl.set(ord, (zaehl.get(ord) || 0) + 1);
+  }
+  return [...zaehl].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([pfad, n]) => ({ pfad, n }));
+};
+// Verlinkt der Text die Notiz schon? ([[Titel]], [[Pfad]] oder [[Dateiname]], auch mit Alias oder Anker) — dann ist „Verlinken“ kein Vorschlag mehr
+const bereitsVerlinkt = (text, kand) => {
+  const namen = new Set([flachTitel(kand.titel), flachTitel(kand.pfad.replace(/\.(md|txt)$/i, "")), flachTitel(kand.pfad.split("/").pop().replace(/\.(md|txt)$/i, ""))]);
+  for (const zeile of String(text).split(/\r?\n/)) if (zeile.includes("[[")) for (const z of wikilinkZiele(zeile)) if (namen.has(flachTitel(z))) return true;
+  return false;
+};
+const flachTitel = (s) => nfc(s).toLowerCase().replace(/\s+/g, " ").trim();
 
 const SUBTYP_TEXT = {
   error_max_turns: "Das war zu viel auf einmal – markiere weniger Text. Nichts wurde geändert.",
@@ -100,6 +121,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
   const { claudePfad, vertraut, darfLesen, pruefeKonto, claudeBereit } = zugriff;
   let startet = false, epoche = 0; // Anfrage im Sammeln der Daten · zählt jeden Abbruch von außen (Vault-Wechsel, Ende, Einwilligung weg)
   let aktiv = null;           // höchstens eine Anfrage: die laufende oder zuletzt beendete
+  let stapel = null;          // „Für alle“: der laufende oder zuletzt beendete Stapel (höchstens einer)
   const speicher = new Map(); // Vault-Kennung → Map(id → Vorschlag); lebt nur im Prozess, nie auf der Platte
 
   // ---------- Token ----------
@@ -111,9 +133,12 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     let m = speicher.get(vaultKennung);
     if (!m) { m = new Map(); speicher.set(vaultKennung, m); }
     m.set(r.id, r);
-    while (m.size > G.speicher) m.delete(m.keys().next().value); // die ältesten fallen heraus
+    // Die Grenze gilt je Quelle: lokale Vorschläge (viele Einträge auf einmal) verdrängen nie die der KI und umgekehrt
+    const gleiche = [...m.values()].filter((x) => x.quelle === r.quelle);
+    for (let i = 0; gleiche.length - i > G.speicher; i++) m.delete(gleiche[i].id); // die ältesten dieser Quelle fallen heraus
   }
-  const verwirfAlle = () => speicher.clear();
+  const rueckSpeicher = new Map(); // Vault-Kennung → Map(Vorschlags-Id → was nötig ist, um die Übernahme zurückzunehmen); nur im Prozess
+  const verwirfAlle = () => { speicher.clear(); rueckSpeicher.clear(); };
 
   // ---------- Bereit / Einwilligung ----------
   const kontenListe = (v, daten) => {
@@ -139,7 +164,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     const aktivId = daten ? aktivesKonto(daten, "claude") : null;
     return { vault: v.name, vertraut: vertraut(v), claude: !!claudePfad(), kontenDefekt: !daten, konten, aktiv: aktivId && konten.some((x) => x.id === aktivId && x.erlaubt) ? aktivId : null,
       einwilligung: w, laeuft: !!laufend, frageLaeuft: !!frageLaeuft(), kontingent: w.konto ? kontingentKurz(w.konto) : null,
-      funktionen: FUNKTIONEN_K0, modelle: Object.keys(MODELLE), grenzen: { eintrag: G.eingabe.eintrag, auswahl: G.eingabe.auswahl } };
+      funktionen: FUNKTIONEN_K0, modelle: Object.keys(MODELLE), grenzen: { eintrag: G.eingabe.eintrag, auswahl: G.eingabe.auswahl, stapel: G.stapel } };
   }
   function kontingentKurz(kontoId) {
     let k = null; try { k = kontingent(kontoId); } catch { k = null; }
@@ -181,7 +206,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     // `ki: nein` schon im Index erkennen: solche Notizen zählen weder für Kandidaten noch für Ordner (ein Ordner, den nur sie füllen, verriete sonst ihr Dasein)
     const keinNein = (z) => z.kiNein !== true && !(z.felder && Object.entries(z.felder).some(([k, w]) => k.normalize("NFC").trim().toLowerCase() === "ki" && istKiNeinWert(w)));
     const sonst = index.filter((z) => z && typeof z.pfad === "string" && z.pfad !== n.pfad && !z.generiert && keinNein(z));
-    const kandidatenPool = sonst.filter((z) => { const f = falte(z.pfad); return !f.startsWith(`${inbox}/`) && !f.startsWith(`${vorlagen}/`) && !(aufgaben && f.startsWith(`${aufgaben}/`)); });
+    const kandidatenPool = sonst.filter((z) => { const f = falte(z.pfad); return v.kiOrtErlaubt(z.pfad) && !f.startsWith(`${inbox}/`) && !f.startsWith(`${vorlagen}/`) && !(aufgaben && f.startsWith(`${aufgaben}/`)); });
     const woerter = wortSet(`${titel} ${text}`);
     const punkte = (z) => { let p = 0; for (const w of wortSet(z.titel || "")) if (woerter.has(w)) p += 3; for (const w of wortSet(z.vorschau || "")) if (woerter.has(w)) p += 1; return p; };
     const rang = kandidatenPool.map((z) => ({ z, p: punkte(z) })).filter((x) => x.p > 0).sort((a, b) => b.p - a.p || (a.z.pfad < b.z.pfad ? -1 : 1)).slice(0, LIMITS.kandidaten * 3);
@@ -190,23 +215,18 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
       if (kandidaten.length >= LIMITS.kandidaten) break;
       let k; try { k = v.lies(z.pfad); } catch { continue; }
       if (istKiNein(k.inhalt)) continue; // nie als Kandidat, auch nicht als Zahl
-      kandidaten.push({ id: `k${kandidaten.length + 1}`, pfad: k.pfad, hash: k.hash, titel: sauberText(titelAus(k.pfad, k.inhalt), 120), anfang: sauberText(schneide(k.inhalt.replace(/^---[\s\S]*?\n---\s*\n/, ""), 1200), G.eingabe.kandidatAnfang) });
+      kandidaten.push({ id: `k${kandidaten.length + 1}`, pfad: k.pfad, hash: k.hash, inhalt: k.inhalt, titel: sauberText(titelAus(k.pfad, k.inhalt), 120), anfang: sauberText(schneide(k.inhalt.slice(kopfLaenge(k.inhalt)), 1200), G.eingabe.kandidatAnfang) });
     }
-    // Ordner: die am häufigsten benutzten außerhalb von Posteingang, Vorlagen, Aufgaben und versteckten/generierten Bereichen
-    const zaehl = new Map();
-    for (const z of kandidatenPool) {
-      const teile = z.pfad.split("/").slice(0, -1);
-      if (!teile.length || teile.some((t) => t.startsWith(".") || t.startsWith("_"))) continue;
-      const ord = teile.slice(0, 2).join("/");
-      zaehl.set(ord, (zaehl.get(ord) || 0) + 1);
-    }
-    const ordner = [...zaehl].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, LIMITS.ordner).map(([name], i) => ({ id: `o${i + 1}`, pfad: name, name: sauberText(name, 120) }));
-    // Tags: in K0 keine Liste. Der Tag-Zähler des Vaults filtert `ki: nein` nicht; die Art „tags“ lässt sich ohnehin erst in K3 übernehmen (dort nur Tags aus Notizen ohne `ki: nein`).
-    const tags = [];
+    // Ordner: die am häufigsten benutzten außerhalb von Posteingang, Vorlagen, Aufgaben und versteckten/generierten Bereichen — gezählt wird nur aus Notizen OHNE `ki: nein` (kandidatenPool), sonst verriete ein Ordner sie
+    const ordner = ordnerAus(kandidatenPool).filter((o) => v.kiOrtErlaubt(`${o.pfad}/x.md`)).slice(0, LIMITS.ordner).map((o, i) => ({ id: `o${i + 1}`, pfad: o.pfad, name: sauberText(o.pfad, 120) }));
+    // Tags: nur die Tags der ausgewählten Kandidaten (schon ohne `ki: nein` geprüft) — nie der Tag-Zähler des Vaults, der auch `ki: nein`-Notizen mitzählt und sie so verriete. Häufigste zuerst, höchstens 40.
+    const tagZaehl = new Map();
+    for (const k of kandidaten) for (const t of extrahiereTags(k.inhalt)) { const s = t.normalize("NFC"); const e = tagZaehl.get(s.toLowerCase()); if (e) e.n++; else tagZaehl.set(s.toLowerCase(), { name: s, n: 1 }); }
+    const tags = [...tagZaehl.values()].sort((a, b) => b.n - a.n || (a.name < b.name ? -1 : 1)).slice(0, G.tagsListe).map((x) => x.name);
     const paket = { aufgabe: "posteingang", daten: { heute: leseDatum(v), eintrag: { titel, text }, kandidaten: kandidaten.map(({ id, titel: t, anfang }) => ({ id, titel: t, anfang })), ordner: ordner.map(({ id, name }) => ({ id, name })), tags } };
     return {
       art: "posteingang", schluesselFunktion: "posteingang", paket, pfad: n.pfad, inhaltHash: n.hash,
-      ziele: { kandidaten: new Map(kandidaten.map((k) => [k.id, { pfad: k.pfad, hash: k.hash, titel: k.titel }])), ordner: new Map(ordner.map((o) => [o.id, { pfad: o.pfad, name: o.name }])) },
+      ziele: { kandidaten: new Map(kandidaten.map((k) => [k.id, { pfad: k.pfad, hash: k.hash, titel: k.titel }])), ordner: new Map(ordner.map((o) => [o.id, { pfad: o.pfad, name: o.pfad }])), erwaehnt: await erwaehnungenFuer(v, n) },
       ctx: { eintrag: text, kandidaten: kandidaten.map((k) => k.id), ordner: ordner.map((o) => o.id) },
       schemaCtx: { kandidaten: kandidatIds(kandidaten.length), ordner: ordnerIds(ordner.length) },
     };
@@ -319,7 +339,8 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
   }
 
   // ---------- Start ----------
-  async function start(e, v) {
+  // Eine einzelne Anfrage: prüft alles (Funktion, Konto, Einwilligung, Kontingent), sammelt die Daten und startet die KI. → { run, info }
+  async function starteIntern(e, v, { abbruch = null } = {}) {
     if (!e || typeof e !== "object") throw new HttpFehler(400, "Die Anfrage ist leer.");
     if (typeof e.funktion !== "string" || !FUNKTIONEN_K0.includes(e.funktion)) throw new HttpFehler(400, "Diese KI-Funktion gibt es noch nicht.", { art: "funktion" });
     if (e.modell !== undefined && !Object.hasOwn(MODELLE, e.modell)) throw new HttpFehler(400, `Das Modell muss eines von ${Object.keys(MODELLE).join(", ")} sein.`);
@@ -346,6 +367,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     let s;
     try { s = e.funktion === "posteingang" ? await sammlePosteingang(e, v) : e.funktion === "zusammenfassung" ? await sammleZusammenfassung(e, v) : e.funktion === "erwaehnungen" ? await sammleErwaehnungen(e, v) : sammleText(e, v); } finally { startet = false; }
     if (epoche !== epocheStart || aktiv && !aktiv.fertig && !aktiv.endet && aktiv.vault === v.wurzel) throw new HttpFehler(409, "Abgebrochen, weil sich inzwischen etwas geändert hat. Bitte noch einmal versuchen.", { art: "abgebrochen" });
+    if (abbruch && abbruch()) throw new HttpFehler(409, "Abgebrochen.", { art: "abgebrochen" }); // der Stapel wurde während des Sammelns abgebrochen: kein Prozess, kein Datenpaket
     const schema = schemaFuer(s.schluesselFunktion, s.schemaCtx);
     const stdin = JSON.stringify(s.paket);
     const kennung = kennungVault(v.wurzel);
@@ -359,11 +381,83 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
       const args = baueVorschlagArgs({ modell, art, schema, system: systemFuer(art), grenzen: { ...G, turns: G.turns } });
       starteKiLauf({ run, claude, args, env, stdin, grenzen: { frist: typeof G.frist === "number" ? G.frist : (G.frist[art] ?? 45_000), ausgabe: G.ausgabe, zeile: G.zeile, leerlauf: G.leerlauf }, onZeile: (z) => verarbeite(run, z), beiEnde: (ende) => beende(run, ende) });
       aktiv = run;
-      return { id: run.id, funktion: e.funktion, gesendet: stdin, konto: { id: kontoId, name: konto.name }, modell, ...(art === "zusammenfassung" ? { ausgenommen: s.ausgenommen } : {}), ...(art === "erwaehnungen" ? { ausgenommen: s.ausgenommen, gesamt: s.gesamt, geprueft: s.gesendetAnzahl } : {}) };
+      return { run, info: { id: run.id, funktion: e.funktion, gesendet: stdin, konto: { id: kontoId, name: konto.name }, modell, ...(art === "zusammenfassung" ? { ausgenommen: s.ausgenommen } : {}), ...(art === "erwaehnungen" ? { ausgenommen: s.ausgenommen, gesamt: s.gesamt, geprueft: s.gesendetAnzahl } : {}) } };
     } catch (err) {
       try { rmSync(temp, { recursive: true, force: true }); } catch { /* bleibt im Temp-Ordner liegen */ }
       throw err;
     }
+  }
+  const stapelLaeuft = (v) => !!(stapel && !stapel.fertig && stapel.vault === v.wurzel);
+  async function start(e, v) {
+    if (!e || typeof e !== "object") throw new HttpFehler(400, "Die Anfrage ist leer.");
+    if (e.pfade !== undefined) return startStapel(e, v);
+    if (stapelLaeuft(v)) throw new HttpFehler(409, "Es läuft schon eine Anfrage. Warte auf die Antwort oder brich sie ab.", { art: "laeuft" });
+    return (await starteIntern(e, v)).info;
+  }
+
+  // ---------- „Für alle“: die Einträge nacheinander (höchstens 10), jederzeit abbrechbar ----------
+  // Die Schleife läuft hier in der Werkstatt, nicht im Studio: Die Grenze von 10 gilt serverseitig, ein Abbruch beendet den laufenden Prozess und startet keinen weiteren, und Kortex hält
+  // immer nur EINE Anfrage zur Zeit. Das Studio fragt den Stand ab (Long-Poll) und sieht die Ergebnisse, sobald sie da sind.
+  const STAPEL_STOPP = new Set(["kontingent", "einwilligung", "einwilligung-konto", "frage-laeuft", "abgebrochen"]);
+  async function startStapel(e, v) {
+    if (e.funktion !== "posteingang") throw new HttpFehler(400, "„Für alle“ gibt es nur im Posteingang.", { art: "funktion" });
+    if (e.modell !== undefined && e.modell !== "klein") throw new HttpFehler(400, "„Für alle“ läuft immer mit dem kleinen Modell.");
+    if (!Array.isArray(e.pfade) || !e.pfade.length || !e.pfade.every((p) => typeof p === "string" && p && p.length < 1024)) throw new HttpFehler(400, "Bitte die Einträge angeben.");
+    const pfade = [...new Set(e.pfade)];
+    if (pfade.length > G.stapel) throw new HttpFehler(400, `Auf einmal gehen höchstens ${G.stapel} Einträge.`, { art: "zu-viele", hoechstens: G.stapel });
+    if (stapelLaeuft(v) || startet || (aktiv && !aktiv.fertig && !aktiv.endet && aktiv.vault === v.wurzel)) throw new HttpFehler(409, "Es läuft schon eine Anfrage. Warte auf die Antwort oder brich sie ab.", { art: "laeuft" });
+    const s = { id: randomBytes(16).toString("hex"), vault: v.wurzel, pfade, ergebnisse: new Map(), version: 0, fertig: false, abgebrochen: false, aktuell: null, gestoppt: null, ausgenommen: 0, konto: null, warter: new Set() };
+    // Die erste Anfrage startet SOFORT (so scheitern Einwilligung, Konto, Kontingent und Datenfehler hier mit klarem Satz); `stapel` bleibt bis dahin frei für Fehler
+    s.aktuell = pfade[0];
+    stapel = s;
+    const epocheStart = epoche;
+    const abschluss = (run) => new Promise((ok) => { if (run.fertig) ok(); else run.warter.add(ok); });
+    const weiter = () => { s.version++; for (const f of [...s.warter]) f(); s.warter.clear(); };
+    let erste;
+    const abbruch = () => s.abgebrochen || epoche !== epocheStart;
+    try { erste = await starteIntern({ funktion: "posteingang", pfad: pfade[0], konto: e.konto, modell: "klein" }, v, { abbruch }); }
+    catch (err) {
+      if (err instanceof HttpFehler && err.extra && err.extra.art === "ki-nein") erste = null; // der erste Eintrag ist ausgenommen: weiter mit dem nächsten
+      else { stapel = null; throw err; }
+    }
+    s.konto = erste ? erste.info.konto : null;
+    (async () => {
+      try {
+        for (let i = 0; i < pfade.length; i++) {
+          const pfad = pfade[i];
+          if (s.abgebrochen || epoche !== epocheStart) break;
+          s.aktuell = pfad; weiter();
+          let r = i === 0 ? erste : null;
+          if (i > 0 || !erste) {
+            try { r = await starteIntern({ funktion: "posteingang", pfad, konto: e.konto, modell: "klein" }, v, { abbruch }); s.konto ??= r.info.konto; }
+            catch (err) {
+              const art = err instanceof HttpFehler && err.extra ? err.extra.art : null;
+              if (art === "ki-nein") { s.ausgenommen++; s.ergebnisse.set(pfad, { ok: false, ausgenommen: true, fehler: err.message }); weiter(); continue; }
+              s.ergebnisse.set(pfad, { ok: false, fehler: err instanceof HttpFehler ? err.message : "Das hat nicht geklappt. Nichts wurde geändert." });
+              if (STAPEL_STOPP.has(art)) { s.gestoppt = err.message; break; }
+              weiter(); continue;
+            }
+          }
+          if (s.abgebrochen || epoche !== epocheStart) { r.run.stopp("nutzer"); }
+          await abschluss(r.run);
+          const erg = r.run.ergebnis || { ok: false, fehler: KEIN_VORSCHLAG };
+          s.ergebnisse.set(pfad, erg);
+          weiter();
+          if (erg.abgebrochen) break;
+          if (!erg.ok && erg.fehler !== KEIN_VORSCHLAG) { s.gestoppt = erg.fehler; break; } // Verbindung, Claude Code, Frist: kein Grund, noch neun Mal zu scheitern
+        }
+      } finally { s.aktuell = null; s.fertig = true; s.abgebrochen = s.abgebrochen || epoche !== epocheStart; weiter(); }
+    })().catch(() => {});
+    return { id: s.id, funktion: "posteingang", stapel: true, von: pfade.length, konto: s.konto };
+  }
+  function stapelStand(s, v, q2) {
+    const bekannt = Number(q2.get("v"));
+    const lebt = () => { if (aktiv && !aktiv.fertig) aktiv.letzterAbruf = Date.now(); }; // der Leerlauf-Wächter des Laufs zählt die Abfragen des Studios
+    lebt();
+    const sende = () => ({ stapel: true, fertig: s.fertig, abgebrochen: s.abgebrochen, version: s.version, von: s.pfade.length, erledigt: s.ergebnisse.size, aktuell: s.aktuell, gestoppt: s.gestoppt, ausgenommen: s.ausgenommen,
+      ...(s.konto ? { konto: s.konto } : {}), eintraege: Object.fromEntries(s.ergebnisse) });
+    if (s.fertig || !Number.isFinite(bekannt) || bekannt !== s.version) return Promise.resolve(sende());
+    return new Promise((ok) => { const f = () => { clearTimeout(t); lebt(); ok(sende()); }; const t = setTimeout(() => { s.warter.delete(f); lebt(); ok(sende()); }, G.longPoll); s.warter.add(f); });
   }
 
   // ---------- Ausgabe lesen ----------
@@ -418,18 +512,30 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     const kandidatenHash = sha(JSON.stringify([[...run.s.ziele.kandidaten].map(([id, k]) => [id, k.pfad, k.hash]), [...run.s.ziele.ordner].map(([id, o]) => [id, o.pfad])]));
     const liste = [];
     for (const x of p.daten.vorschlaege) {
-      const id = `vs_${randomBytes(8).toString("hex")}`;
       const kand = x.ziel && run.s.ziele.kandidaten.get(x.ziel);
       const ord = x.ziel && run.s.ziele.ordner.get(x.ziel);
-      // Die Beschriftung baut Kortex aus geprüften Feldern und eigenen Namen, nie die KI (Plan, Schicht E)
-      const beschriftung = x.art === "verlinken" ? `Verlinkt mit ${q(kand.titel)}` : x.art === "duplikat" ? `Markiert als Duplikat von ${q(kand.titel)}` : x.art === "verschieben" ? `Verschiebt nach ${q(ord.name)}`
-        : x.art === "aufgabe" ? "Legt eine Aufgabe an" : `Setzt die Tags ${x.tags.map((t) => `#${t}`).join(", ")}`;
-      const rec = { id, vault: run.kennung, pfad: run.s.pfad, inhaltHash: run.s.inhaltHash, kandidatenHash, ablauf, art: x.art, ziel: kand ? { art: "notiz", pfad: kand.pfad, hash: kand.hash } : ord ? { art: "ordner", pfad: ord.pfad } : null,
-        aufgabe: x.aufgabe || null, tags: x.tags || null, beschriftung, angewendet: false };
-      merke(run.kennung, rec);
-      liste.push({ id, token: tokenFuer(rec), art: x.art, beschriftung, ...(x.aufgabe ? { aufgabe: x.aufgabe } : {}), ...(x.tags ? { tags: x.tags } : {}), beleg: x.beleg, begruendung: x.begruendung, sicherheit: x.sicherheit, ablauf: new Date(ablauf).toISOString() });
+      if (x.art === "verlinken" && kand && bereitsVerlinkt(run.s.ctx.eintrag, kand)) continue; // schon verlinkt: nichts vorzuschlagen
+      liste.push(legeVorschlagAn({ kennung: run.kennung, pfad: run.s.pfad, inhaltHash: run.s.inhaltHash, kandidatenHash, ablauf, eintragText: run.s.ctx.eintrag, quelle: "ki" },
+        { ...x, kand: kand || null, ord: ord || null, anhaengen: !!kand && x.art === "verlinken" && !run.s.ziele.erwaehnt.has(kand.pfad) }));
     }
     return { funktion: "posteingang", vorschlaege: liste, verworfen: p.verworfen, ...marke };
+  }
+
+  // Einen geprüften Vorschlag im Speicher der Werkstatt ablegen und fürs Studio beschreiben. Die Beschriftung baut Kortex aus geprüften Feldern und eigenen Namen, nie die KI (Plan, Schicht E);
+  // die Ziele (Pfad, Titel) kommen aus dem Speicher der Werkstatt und dienen im Studio nur der Anzeige — übernommen wird allein über id + Token.
+  function legeVorschlagAn(c, x) {
+    const id = `vs_${randomBytes(8).toString("hex")}`;
+    const { kand, ord } = x;
+    const beschriftung = x.art === "verlinken" ? (x.anhaengen ? `Hängt einen Link auf ${q(kand.titel)} an den Eintrag` : `Verlinkt mit ${q(kand.titel)}`)
+      : x.art === "duplikat" ? `Legt den Eintrag als Duplikat von ${q(kand.titel)} ab` : x.art === "verschieben" ? `Verschiebt nach ${q(ord.name)}`
+      : x.art === "aufgabe" ? "Legt eine Aufgabe an" : `Setzt die Tags ${x.tags.map((t) => `#${t}`).join(", ")}`;
+    const ziel = kand ? { art: "notiz", pfad: kand.pfad, hash: kand.hash } : ord ? { art: "ordner", pfad: ord.pfad } : null;
+    const rec = { id, vault: c.kennung, pfad: c.pfad, inhaltHash: c.inhaltHash, kandidatenHash: c.kandidatenHash, ablauf: c.ablauf, art: x.art, ziel, aufgabe: x.aufgabe || null, tags: x.tags || null, beschriftung, quelle: c.quelle, angewendet: false };
+    merke(c.kennung, rec);
+    const schluessel = sha([x.art, ziel ? ziel.pfad : "", x.aufgabe ? x.aufgabe.text : "", x.tags ? x.tags.join(",") : ""].join("\0")).slice(0, 16);
+    return { id, token: tokenFuer(rec), art: x.art, beschriftung, quelle: c.quelle, schluessel, ...(x.aufgabe ? { aufgabe: x.aufgabe } : {}), ...(x.tags ? { tags: x.tags } : {}),
+      ...(kand ? { ziel: { art: "notiz", pfad: kand.pfad, titel: kand.titel } } : ord ? { ziel: { art: "ordner", pfad: ord.pfad, name: ord.name } } : {}),
+      beleg: x.beleg, warum: belegStelle(c.eintragText, x.beleg) || { vor: "", treffer: x.beleg, nach: "" }, begruendung: x.begruendung, sicherheit: x.sicherheit, ablauf: new Date(c.ablauf).toISOString() };
   }
 
   function beende(run, ende) {
@@ -445,6 +551,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     return aktiv;
   }
   async function stand(q2, v) {
+    if (stapel && stapel.id === q2.get("id") && stapel.vault === v.wurzel) return stapelStand(stapel, v, q2);
     const run = suche(q2.get("id"), v);
     run.letzterAbruf = Date.now();
     if (!run.fertig) {
@@ -454,17 +561,95 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     return { fertig: run.fertig, konto: { id: run.konto, name: run.kontoName }, modell: run.modell, funktion: run.funktion, ...(run.fertig ? { ergebnis: run.ergebnis } : {}) };
   }
   function abbrechen(e, v) {
+    if (e && stapel && stapel.id === e.id && stapel.vault === v.wurzel) {
+      if (stapel.fertig) return { ok: true, schonFertig: true };
+      stapel.abgebrochen = true; // kein weiterer Start; der laufende Prozess endet sofort (Prozessgruppe)
+      if (aktiv && !aktiv.fertig) aktiv.stopp("nutzer");
+      return { ok: true };
+    }
     const run = suche(e && e.id, v);
     if (run.fertig) return { ok: true, schonFertig: true };
     run.stopp("nutzer");
     return { ok: true };
   }
   // Vault gewechselt, Werkstatt beendet, Fenster zu: eine laufende Anfrage endet, alle Vorschläge sind verworfen (Plan 2.4 Nr. 5).
-  const brichAb = (grund) => { epoche++; if (aktiv && !aktiv.fertig) aktiv.stopp(grund); verwirfAlle(); };
+  const brichAb = (grund) => { epoche++; if (stapel && !stapel.fertig) stapel.abgebrochen = true; if (aktiv && !aktiv.fertig) aktiv.stopp(grund); verwirfAlle(); };
+
+  // ---------- Erwähnungen im Eintrag (für „Verlinken“) ----------
+  // Welche Notizen nennt der Eintrag im Klartext, ohne Link? → Map(Pfad → Stelle { start, treffer, vor, nach }), je Notiz die erste Stelle. Ohne Suchindex: leer (dann hängt Kortex einen Link an).
+  async function erwaehnungenFuer(v, n, warte = { aufgegeben: false }) {
+    const m = new Map();
+    try {
+      // Der Erwähnungs-Index baut nach dem Öffnen im Hintergrund auf: kurz warten (höchstens ~2 s), statt „keine Stelle“ zu raten
+      let r = await v.erwaehntVon(n.pfad, n.inhalt);
+      for (let i = 0; i < 6 && !warte.aufgegeben && !(r.aufbau && r.aufbau.index && r.aufbau.namen); i++) { await new Promise((ok) => setTimeout(ok, 250)); r = await v.erwaehntVon(n.pfad, n.inhalt); }
+      if (!(r.aufbau && r.aufbau.index && r.aufbau.namen)) warte.aufgegeben = true; // nicht für jeden weiteren Eintrag noch einmal warten
+      for (const x of r.notizen || []) { const st = x.stellen && x.stellen[0]; if (st && typeof st.treffer === "string") m.set(x.pfad, { start: st.start, treffer: st.treffer, vor: st.vor || "", nach: st.nach || "" }); }
+    } catch { /* ohne Index: keine Stelle */ }
+    return m;
+  }
+
+  // ---------- Lokale Vorschläge (ohne KI, ohne Einwilligung: nichts verlässt den Mac) ----------
+  // Gleicher Titel → Duplikat · der Eintrag nennt den Titel einer Notiz → Verlinken · ein Tag des Eintrags heißt wie ein Ordner → Verschieben. Alles aus dem Notiz-Index; höchstens 3 je Eintrag.
+  // Dieselben Karten, derselbe Speicher, dieselbe Übernahme über id + Token wie bei der KI (Marke „ohne KI“).
+  function lokaleVorschlaege(v, n, index, erwaehnt, ort) {
+    const titel = titelAus(n.pfad, n.inhalt), nt = flachTitel(titel);
+    const verwaltet = (pfad) => { const f = falte(pfad); return !v.kiOrtErlaubt(pfad, true) || f.startsWith(`${ort.vorlagen}/`) || (ort.aufgaben && f.startsWith(`${ort.aufgaben}/`)); }; // dieselbe Regel wie für die KI (Wiki, Archiv, CLAUDE.md … nie ein Ziel)
+    const pool = index.filter((z) => z && typeof z.pfad === "string" && z.pfad !== n.pfad && !z.generiert && !verwaltet(z.pfad));
+    const zielVon = (pfad) => { try { const k = v.lies(pfad); return { pfad: k.pfad, hash: k.hash, titel: sauberText(titelAus(k.pfad, k.inhalt), 120) }; } catch { return null; } };
+    const aus = [];
+    const dupPfade = new Set();
+    if (nt.length >= 3) for (const z of pool) {
+      if (aus.length >= 1) break;
+      if (flachTitel(z.titel || "") !== nt) continue;
+      if (falte(z.pfad).startsWith(`${ort.inbox}/`) && z.pfad > n.pfad) continue; // zwei gleiche Einträge im Posteingang: nur der spätere bekommt den Vorschlag, einer bleibt
+      const kand = zielVon(z.pfad); if (!kand) continue;
+      dupPfade.add(z.pfad);
+      aus.push({ art: "duplikat", kand, beleg: sauberText(titel, 200), begruendung: `Gleicher Titel wie ${q(kand.titel)}${ordnerVonPfad(z.pfad) ? ` in ${q(ordnerVonPfad(z.pfad))}` : ""}.`, sicherheit: "hoch" });
+    }
+    let nv = 0;
+    for (const [pfad, st] of erwaehnt) {
+      if (nv >= 2 || aus.length >= 3) break;
+      if (dupPfade.has(pfad) || !pool.some((z) => z.pfad === pfad)) continue;
+      const kand = zielVon(pfad); if (!kand) continue;
+      nv++;
+      aus.push({ art: "verlinken", kand, beleg: sauberText(st.treffer, 200), begruendung: `Der Eintrag nennt ${q(sauberText(st.treffer, 60))} — so heißt eine andere Notiz.`, sicherheit: "hoch", anhaengen: false });
+    }
+    if (aus.length < 3) {
+      const ordnerPool = ordnerAus(pool.filter((z) => !falte(z.pfad).startsWith(`${ort.inbox}/`))).filter((o) => v.kiOrtErlaubt(`${o.pfad}/x.md`));
+      for (const tag of extrahiereTags(n.inhalt)) {
+        const o = ordnerPool.find((x) => falte(x.pfad.split("/").pop()) === falte(tag.split("/").pop()));
+        if (!o) continue;
+        aus.push({ art: "verschieben", ord: { pfad: o.pfad, name: o.pfad }, beleg: sauberText(`#${tag}`, 100), begruendung: `Der Tag #${sauberText(tag, 60)} passt zum Ordner ${q(sauberText(o.pfad, 100))}.`, sicherheit: "hoch" });
+        break;
+      }
+    }
+    return aus.slice(0, 3);
+  }
+  async function lokal(e, v) {
+    if (!e || typeof e !== "object" || !Array.isArray(e.pfade) || !e.pfade.length || e.pfade.length > G.lokal || !e.pfade.every((p) => typeof p === "string" && p && p.length < 1024)) throw new HttpFehler(400, `Bitte 1 bis ${G.lokal} Einträge angeben.`);
+    let index = []; try { index = (await v.notizen()).notizen || []; } catch { index = []; }
+    let aufgaben = ""; try { aufgaben = falte(await v.aufgabenOrdnerName()); } catch { /* ohne */ }
+    const ort = { inbox: falte(inboxOrdnerVon(v.wurzel)), vorlagen: falte(vorlagenOrdnerVon(v.wurzel)), aufgaben };
+    const kennung = kennungVault(v.wurzel);
+    const eintraege = {}, warte = { aufgegeben: false };
+    for (const pfad of new Set(e.pfade)) {
+      let n; try { n = v.lies(pfad); } catch { continue; }
+      if (!inInbox(v, n.pfad)) continue;
+      const gefunden = lokaleVorschlaege(v, n, index, await erwaehnungenFuer(v, n, warte), ort);
+      for (const [id, o] of speicher.get(kennung) || []) if (o.quelle === "lokal" && o.pfad === n.pfad && !o.angewendet) speicher.get(kennung).delete(id); // der neue Stand ersetzt den alten
+      const ablauf = jetzt() + G.ablauf;
+      const kHash = sha(JSON.stringify(gefunden.map((x) => [x.art, x.kand ? x.kand.pfad : null, x.ord ? x.ord.pfad : null])));
+      eintraege[n.pfad] = gefunden.map((x) => legeVorschlagAn({ kennung, pfad: n.pfad, inhaltHash: n.hash, kandidatenHash: kHash, ablauf, eintragText: n.inhalt, quelle: "lokal" }, x));
+    }
+    return { eintraege };
+  }
 
   // ---------- Anwenden ----------
-  // NUR id und token kommen von außen. Pfad, Ziel und Text stammen aus dem Speicher der Werkstatt; geschrieben wird über die vorhandenen Wege (dateiaktionen mit Journal und Rückgängig,
-  // Aufgaben-API). Falscher Vault: 404 ohne Namen · falsches Token: 403 · abgelaufen oder Notiz/Ziel verändert: 409.
+  // NUR id und token kommen von außen. Pfad, Ziel und Text stammen aus dem Speicher der Werkstatt; geschrieben wird über die vorhandenen Wege: verschieben und verlinken über dateiaktionen (Journal, Hash je Datei,
+  // Rückgängig), Tags und angehängter Link über denselben Weg (vault.aendereNotiz), Duplikat über den Posteingang (Archiv, ein Git-Commit), Aufgabe über die Aufgaben-API. Falscher Vault: 404 ohne Namen ·
+  // falsches Token: 403 · abgelaufen oder Notiz/Ziel verändert: 409. Ein Protokolleintrag nennt nie Inhalt oder KI-Text.
+  const haengeAn = (text, zeile) => { const cr = text.includes("\r\n") ? "\r\n" : "\n"; return `${text.replace(/(\r?\n)+$/, "")}${cr}${cr}${zeile}${cr}`; };
   async function anwenden(e, v) {
     if (!e || typeof e !== "object" || typeof e.id !== "string" || typeof e.token !== "string") throw new HttpFehler(400, "Die Anfrage braucht „id“ und „token“.");
     const kennung = kennungVault(v.wurzel);
@@ -478,26 +663,93 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     // Notiz und Ziel müssen noch genau so sein wie bei der Anfrage (Inhalts-Hash) — und weiter im Posteingang liegen
     let n; try { n = v.lies(r.pfad); } catch { throw veraltet(); }
     if (n.hash !== r.inhaltHash || !inInbox(v, n.pfad)) throw veraltet();
-    if (istKiNein(n.inhalt)) throw KI_NEIN_FEHLER();
+    if (r.quelle !== "lokal" && istKiNein(n.inhalt)) throw KI_NEIN_FEHLER();
+    if (r.ziel && !v.kiOrtErlaubt(r.ziel.art === "ordner" ? `${r.ziel.pfad}/x.md` : r.ziel.pfad)) throw new HttpFehler(409, "Dieses Ziel ist für Vorschläge nicht erlaubt (verwalteter Ort). Es wurde nichts geändert.", { art: "ziel-verwaltet" });
     if (r.ziel && r.ziel.art === "notiz") { let z; try { z = v.lies(r.ziel.pfad); } catch { throw veraltet(); } if (z.hash !== r.ziel.hash) throw veraltet(); }
+    const wer = r.quelle === "lokal" ? "Vorschlag übernommen" : "KI-Vorschlag übernommen";
     // Der Vorschlag ist ab jetzt „in Arbeit“: zwei gleichzeitige Klicks führen die Aktion nie zweimal aus; scheitert sie, wird er wieder frei
     r.angewendet = true;
-    let ergebnis;
+    let ergebnis, rueck = null, eintragGeaendert = false;
     try {
       if (r.art === "verschieben") {
         const vorschau = await v.verschieben({ pfad: r.pfad, ziel: r.ziel.pfad, basisHash: r.inhaltHash, vorschau: true });
         ergebnis = await v.verschieben({ pfad: r.pfad, ziel: r.ziel.pfad, basisHash: r.inhaltHash, token: vorschau.token }); // eigener Plan-Token der Werkstatt; Journal, Rückgängig, ein Protokolleintrag
+        rueck = { art: "verschieben", vorgang: ergebnis.vorgang };
+      } else if (r.art === "verlinken") {
+        // Steht der Titel im Text, wird genau diese Stelle verlinkt (Erwähnungen-Weg mit Vorschau-Token); sonst hängt Kortex „Siehe auch: [[…]]“ an den Eintrag an
+        const stelle = (await erwaehnungenFuer(v, n)).get(r.ziel.pfad);
+        if (stelle) {
+          const a = { ziel: r.ziel.pfad, stellen: [{ pfad: r.pfad, start: stelle.start, treffer: stelle.treffer, vor: stelle.vor, nach: stelle.nach, hash: n.hash }] };
+          const vorschau = await v.verlinke({ ...a, vorschau: true });
+          if (vorschau.verweise > 0) ergebnis = await v.verlinke({ ...a, token: vorschau.token });
+        }
+        if (!ergebnis || ergebnis.unveraendert) {
+          let index = []; try { index = (await v.notizen()).notizen || []; } catch { index = []; }
+          const wiki = baueWikiIndex(index.filter((z) => z && typeof z.pfad === "string").map((z) => ({ pfad: z.pfad, titel: z.titel, aliasse: z.aliasse })));
+          const link = `[[${linkText(wiki, r.ziel.pfad, ordnerVonPfad(r.pfad))}]]`;
+          ergebnis = await v.aendereNotiz({ pfad: r.pfad, basisHash: n.hash, beschreibung: `${wer}: Link angehängt`, aendere: (t) => (t.includes(link) || t.includes(`${link.slice(0, -2)}|`) ? t : haengeAn(t, `Siehe auch: ${link}`)) });
+        }
+        if (!ergebnis.vorgang) throw new HttpFehler(409, "Der Eintrag ist schon so, wie der Vorschlag ihn haben will.", { art: "nichts-zu-tun" });
+        rueck = { art: "verlinken", vorgang: ergebnis.vorgang }; eintragGeaendert = true;
+      } else if (r.art === "tags") {
+        ergebnis = await v.aendereNotiz({ pfad: r.pfad, basisHash: n.hash, beschreibung: `${wer}: Tags gesetzt`, aendere: (t) => {
+          try { return fuegeTagsHinzu(t, r.tags).text; }
+          catch { throw new HttpFehler(422, "Der Kopf dieser Notiz lässt sich nicht sicher ergänzen. Es wurde nichts geändert.", { art: "kopf" }); }
+        } });
+        if (!ergebnis.vorgang) throw new HttpFehler(409, "Der Eintrag hat diese Tags schon.", { art: "nichts-zu-tun" });
+        rueck = { art: "tags", vorgang: ergebnis.vorgang }; eintragGeaendert = true;
+      } else if (r.art === "duplikat") {
+        const x = await v.posteingangVerwerfen({ pfad: r.pfad }); // Archiv „verworfen“, ein Git-Commit; nichts wird gelöscht
+        melde(v.wurzel, { art: "datei-aktion", wer: "Du", vaultName: v.name, text: `${wer}: als Duplikat abgelegt` }, { support });
+        ergebnis = { ziel: x.ziel, pfad: x.pfad };
+        rueck = { art: "duplikat", archiv: x.ziel, pfad: r.pfad };
       } else if (r.art === "aufgabe") {
         const a = await v.aufgabeAnlegen({ titel: r.aufgabe.text, ...(r.aufgabe.faellig ? { faellig: r.aufgabe.faellig } : {}), quelle: "mensch" });
-        melde(v.wurzel, { art: "datei-aktion", wer: "KI-Vorschlag", vaultName: v.name, text: "KI-Vorschlag übernommen: Aufgabe angelegt" }, { support });
+        melde(v.wurzel, { art: "datei-aktion", wer: "KI-Vorschlag", vaultName: v.name, text: `${wer}: Aufgabe angelegt` }, { support });
         ergebnis = { pfad: a.pfad };
+        let hash = null; try { hash = v.lies(a.pfad).hash; } catch { hash = null; }
+        rueck = { art: "aufgabe", pfad: a.pfad, hash };
       } else {
-        throw new HttpFehler(409, "Diese Art von Vorschlag lässt sich noch nicht übernehmen.", { art: "noch-nicht" });
+        throw new HttpFehler(409, "Diese Art von Vorschlag lässt sich nicht übernehmen.", { art: "unbekannte-art" });
       }
     } catch (err) { r.angewendet = false; throw err; }
     speicher.get(kennung)?.delete(r.id);
-    return { ok: true, art: r.art, ...(ergebnis && ergebnis.nach ? { nach: ergebnis.nach } : {}), ...(ergebnis && ergebnis.pfad ? { pfad: ergebnis.pfad } : {}), ...(ergebnis && ergebnis.von ? { von: ergebnis.von } : {}) };
+    if (rueck) { let m = rueckSpeicher.get(kennung); if (!m) rueckSpeicher.set(kennung, m = new Map()); m.set(r.id, { ...rueck, zurueck: false }); while (m.size > G.speicher) m.delete(m.keys().next().value); }
+    // Hat Kortex den Eintrag selbst geändert, bleiben die anderen Vorschläge zu diesem Eintrag gültig: neuer Inhalts-Hash, neue Token (nur wir haben geschrieben, der Hash stammt von der Platte)
+    const geschwister = [];
+    if (eintragGeaendert) {
+      let neu = null; try { neu = v.lies(r.pfad); } catch { neu = null; }
+      if (neu) for (const o of (speicher.get(kennung) || new Map()).values()) {
+        if (o.pfad === r.pfad && !o.angewendet && jetzt() <= o.ablauf) { o.inhaltHash = neu.hash; geschwister.push({ id: o.id, token: tokenFuer(o) }); }
+      }
+    }
+    // `geaendert`: alle berührten Pfade — der Handler zählt sie als eigene Änderungen (sonst meldete der Wächter dem offenen Editor eine „fremde“ Änderung)
+    const geaendert = [...new Set([r.pfad, ergebnis && ergebnis.nach, ergebnis && ergebnis.von, ergebnis && ergebnis.pfad, r.art === "duplikat" && ergebnis && ergebnis.ziel, ...((ergebnis && ergebnis.geaendert) || [])].filter((x) => typeof x === "string" && x))];
+    return { ok: true, art: r.art, quelle: r.quelle, rueckgaengig: !!rueck, geaendert, ...(ergebnis && ergebnis.nach ? { nach: ergebnis.nach } : {}), ...(ergebnis && ergebnis.pfad ? { pfad: ergebnis.pfad } : {}), ...(ergebnis && ergebnis.von ? { von: ergebnis.von } : {}),
+      ...(ergebnis && ergebnis.ziel && r.art === "duplikat" ? { archiv: ergebnis.ziel } : {}), ...(ergebnis && ergebnis.aktivitaetId ? { aktivitaetId: ergebnis.aktivitaetId } : {}), ...(ergebnis && ergebnis.vorgang ? { vorgang: ergebnis.vorgang } : {}),
+      ...(geschwister.length ? { geschwister } : {}) };
   }
 
-  return { bereit, einwilligung, setzeEinwilligung, start, stand, abbrechen, anwenden, brichAb, laeuft: () => startet || !!(aktiv && !aktiv.fertig), _speicherGroesse: (v) => (speicher.get(kennungVault(v.wurzel)) || new Map()).size };
+  // Eine Übernahme zurücknehmen — nur mit der Kennung des Vorschlags; was dafür nötig ist, hat die Werkstatt sich bei der Übernahme gemerkt.
+  // Verschieben, Verlinken, Tags: das Journal der Dateiaktion (wie „Rückgängig“ im Verlauf) · Aufgabe: in den Papierkorb (wiederherstellbar) · Duplikat: aus dem Archiv zurück in den Posteingang.
+  async function zurueck(e, v) {
+    if (!e || typeof e !== "object" || typeof e.id !== "string") throw new HttpFehler(400, "Die Anfrage braucht „id“.");
+    const kennung = kennungVault(v.wurzel);
+    const rr = (rueckSpeicher.get(kennung) || new Map()).get(e.id);
+    if (!rr) throw new HttpFehler(404, "Das lässt sich nicht (mehr) zurücknehmen.", { art: "unbekannt" });
+    if (rr.zurueck) throw new HttpFehler(409, "Das ist schon zurückgenommen.", { art: "schon-zurueck" });
+    if (rr.laeuft) throw new HttpFehler(409, "Das wird gerade zurückgenommen.", { art: "laeuft" });
+    rr.laeuft = true;
+    let erg;
+    try {
+      if (rr.art === "aufgabe") erg = await v.loeschen({ pfad: rr.pfad, ...(rr.hash ? { basisHash: rr.hash } : {}) }); // ist die Aufgabe inzwischen bearbeitet, bleibt sie (409)
+      else if (rr.art === "duplikat") erg = await v.posteingangZuruecklegen({ archiv: rr.archiv, pfad: rr.pfad }); // genau an den Ursprungspfad (409, wenn belegt), mit Commit
+      else erg = await v.vorgangZurueck({ id: rr.vorgang });
+    } finally { rr.laeuft = false; }
+    rr.zurueck = true;
+    const geaendert = [...new Set([erg && erg.nach, erg && erg.von, erg && erg.pfad, ...((erg && erg.geaendert) || [])].filter((x) => typeof x === "string" && x))];
+    return { ok: true, art: rr.art, geaendert, ...(erg && erg.nach ? { nach: erg.nach } : {}), ...(erg && erg.pfad ? { pfad: erg.pfad } : {}) };
+  }
+
+  return { bereit, einwilligung, setzeEinwilligung, start, stand, abbrechen, anwenden, zurueck, lokal, brichAb, laeuft: () => startet || !!(aktiv && !aktiv.fertig) || !!(stapel && !stapel.fertig), _speicherGroesse: (v) => (speicher.get(kennungVault(v.wurzel)) || new Map()).size };
 }

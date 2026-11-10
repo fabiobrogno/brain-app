@@ -150,6 +150,54 @@ export function extrahiereTags(text) {
   return [...gesehen.values()];
 }
 
+/**
+ * Tags im Kopf (Front-Matter) ergänzen, zeilengenau: der Rest der Datei bleibt bytegleich, auch die Zeilenenden. Schon vorhandene Tags (im Kopf oder im Text) werden nicht doppelt gesetzt.
+ * → { text, neu: [Tag] } (neu = wirklich ergänzt; text bleibt gleich, wenn nichts zu tun ist). Wirft Error, wenn sich der Kopf nicht sicher ändern lässt
+ * (geöffnet, aber nicht geschlossen · mehrzeilige Inline-Liste · Kommentar hinter dem Wert · verschachtelter Wert).
+ */
+export function fuegeTagsHinzu(text, tags) {
+  if (text.startsWith("﻿")) { const r = fuegeTagsHinzu(text.slice(1), tags); return { text: r.neu.length ? "﻿" + r.text : text, neu: r.neu }; }
+  const da = new Set(extrahiereTags(text).map(schluesselVon));
+  const neu = [];
+  for (const t of Array.isArray(tags) ? tags : []) { const n = pruefeTagName(t); if (n === null || !/^[\p{L}\p{N}]/u.test(n) || !/\p{L}/u.test(n)) continue; const k = schluesselVon(n); if (da.has(k)) continue; da.add(k); neu.push(n); }
+  if (!neu.length) return { text, neu };
+  const zeilen = text.split("\n");
+  const cr = zeilen[0].endsWith("\r") ? "\r" : "";
+  const eol = cr ? "\r\n" : "\n";
+  const { bis } = parseKopf(text);
+  if (!bis) {
+    if (/^---/.test(text)) throw new Error("kopf-offen");
+    return { text: `---${eol}tags: [${neu.join(", ")}]${eol}---${eol}${text}`, neu };
+  }
+  const kopf = zeilen.slice(0, bis), rest = zeilen.slice(bis);
+  const ende = (z) => z.replace(/\r$/, "");
+  const treffer = kopf.map((z, n) => (n > 0 && n < bis - 1 && KOPF_SCHLUESSEL.test(ende(z)) ? n : -1)).filter((n) => n >= 0);
+  if (treffer.length > 1) throw new Error("kopf-schwierig"); // zwei Schlüssel (tags und keywords …): nicht raten, welcher gilt
+  const i = treffer.length ? treffer[0] : -1;
+  if (i < 0) kopf.splice(bis - 1, 0, `tags: [${neu.join(", ")}]${cr}`);
+  else {
+    const m = KOPF_SCHLUESSEL.exec(ende(kopf[i]));
+    const wert = m[2].trim();
+    const einrueck = (z) => /^\s*/.exec(z)[0];
+    if (wert === "") {
+      let j = i + 1, letzte = -1, ein = "";
+      while (j < bis - 1 && !ende(kopf[j]).trim()) j++; // Leerzeilen vor oder zwischen den Einträgen
+      while (j < bis - 1 && (/^\s*-(\s|$)/.test(ende(kopf[j])) || !ende(kopf[j]).trim())) { if (/^\s*-/.test(ende(kopf[j]))) { if (letzte < 0) ein = einrueck(kopf[j]); letzte = j; } j++; }
+      if (letzte < 0) { if (j < bis - 1 && /^\s+\S/.test(ende(kopf[j]))) throw new Error("kopf-schwierig"); kopf[i] = `${m[1]}: [${neu.join(", ")}]${cr}`; }
+      else kopf.splice(letzte + 1, 0, ...neu.map((t) => `${ein}- ${t}${cr}`));
+    } else if (wert.startsWith("[") && !wert.startsWith("[[")) {
+      const z = ende(kopf[i]), zu = z.lastIndexOf("]");
+      if (zu < 0 || z.slice(zu + 1).trim() !== "") throw new Error("kopf-schwierig");
+      const innen = z.slice(z.indexOf("[") + 1, zu).trim();
+      kopf[i] = `${z.slice(0, zu).replace(/\s+$/, "")}${innen ? ", " : ""}${neu.join(", ")}${z.slice(zu)}${cr}`;
+    } else {
+      if (/\s#/.test(wert) || /^[>|{&!~*]/.test(wert) || /["']/.test(wert)) throw new Error("kopf-schwierig");
+      kopf[i] = `${ende(kopf[i]).replace(/\s+$/, "")}, ${neu.join(", ")}${cr}`;
+    }
+  }
+  return { text: [...kopf, ...rest].join("\n"), neu };
+}
+
 // Gehört der Tag `t` zu `alt` (gleich oder darunter)? → Rest nach `alt` (leer oder "/…") oder null
 const unter = (t, alt) => { const a = schluesselVon(t), b = schluesselVon(alt); return a === b ? "" : a.startsWith(b + "/") ? t.slice(alt.normalize("NFC").length) : null; };
 

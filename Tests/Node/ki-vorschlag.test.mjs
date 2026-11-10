@@ -217,7 +217,8 @@ test("Token: falscher Vault 404, falsches Token 403, geänderte Notiz 409, abgel
   assert.equal((await anwenden({ id: vs.id, token: vs.token.slice(0, 60) })).status, 403, "zu kurz");
   // Token und Pfad/Aktion von außen werden nicht gelesen: zusätzliche Felder ändern nichts
   r = await anwenden({ id: vs.id, token: vs.token, pfad: "../../x", art: "loeschen", ziel: "/" });
-  assert.equal(r.status, 409); assert.equal(r.j.art, "noch-nicht", "„verlinken“ lässt sich in K0 noch nicht übernehmen; es wurde nichts geschrieben");
+  assert.equal(r.status, 200, JSON.stringify(r.j)); assert.equal(r.j.art, "verlinken", "die Art kommt aus dem Speicher der Werkstatt, nicht aus der Anfrage");
+  assert.equal((await anwenden({ id: vs.id, token: vs.token })).status, 404, "verbraucht");
   // anderer Vault: alles verworfen, nichts bekannt (404)
   assert.equal((await s.api("POST", "/api/vaults/aktiv", { pfad: s.anderer })).status, 200);
   r = await anwenden({ id: vs.id, token: vs.token });
