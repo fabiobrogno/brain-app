@@ -303,6 +303,7 @@ const ed = erstelleEditor($("editor"), {
   wikiAufloesen: (ziel) => loeseWikiAuf(ziel),
   wikiFarbe: (pfad) => { const n = S.nMap.get(pfad); const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null; return typ ? typTextFarbe(typ) : null; },
   wikiVorschlaege: (getippt) => wikiVorschlaege(getippt),
+  kuerzel: (id) => kz.anzeige(id), // Schrägstrich-Menü: echtes Kürzel als Hinweis
   tagVorschlaege: (getippt) => tags.vorschlaege(getippt),
   wikiOeffnen: (ziel) => { const d = loeseWikiAuf(ziel); if (d) oeffne(d); else toast(T.wiki.fehlt(ziel), { aktion: { text: T.wiki.anlegen, tun: () => legeWikiZielAn(ziel) } }); },
   speichernJetzt: () => { clearTimeout(speicherTimer); speichere(); },

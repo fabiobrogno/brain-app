@@ -9,6 +9,7 @@ import { istAnhangName } from "./anhang-regeln.js";
 import { tabellenErweiterung, fuegeTabelleEin, zelleUmschalten } from "./tabellen.js"; // Runde 3b: Tabellen, Formatieren, Einfügen, Format-Leiste (eigene Module)
 import * as FM from "./formatieren.js";
 import { formatLeiste } from "./format-leiste.js";
+import { schraegstrichMenue } from "./schraegstrich.js"; // „/“ öffnet das Einfüge-Menü an der Schreibmarke
 
 const { EditorState, EditorSelection, EditorView, Decoration, ViewPlugin, WidgetType, StateField, StateEffect, GutterMarker, MapMode, gutter, keymap } = CM;
 
@@ -620,6 +621,7 @@ export function erstelleEditor(eltern, ctx) {
     ...tabellenErweiterung(ctx, { neuZeichnen, fokusGeaendert }),
     FM.einfuegenErweiterung(ctx),
     formatLeiste(ctx),
+    schraegstrichMenue({ ...ctx, kopfBereich: kopfBereich }),
     vorschauPlugin(ctx),
     ...(ctx.anhaenge ? anhangErweiterung(ctx.anhaenge, ctx) : []),
     CM.autocompletion({ override: [wikiQuelle(ctx), ...(ctx.tagVorschlaege ? [tagQuelle(ctx)] : [])], icons: false, tooltipClass: () => "cm-wikiliste" }),
