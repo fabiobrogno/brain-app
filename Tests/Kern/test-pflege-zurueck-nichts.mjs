@@ -119,13 +119,13 @@ test("Probe, Ingest-Sperre fremd belegt, nichts zu tun → jeweils Grund und NIC
   nichtsAendertSich(v, () => Z.nimmPflegeZurueck(v, { lauf: "20200101-000000" }), "nichts-gefunden");
   nichtsAendertSich(v, () => Z.nimmPflegeZurueck(v, { ids: ["gibt-es-nicht"] }), "nichts-gefunden");
   mkdirSync(join(v, ".logs"), { recursive: true });
-  writeFileSync(join(v, ".logs", "ingest.lock"), "ingest 1\n");                       // von /ingest, nicht von uns
+  writeFileSync(join(v, ".logs", "ingest.lock"), `ingest ${process.pid}\n`);                       // von /ingest, nicht von uns
   const vorher = zustand(v);
   assert.equal(Z.nimmPflegeZurueck(v, { lauf: k.lauf }).grund, "ingest-laeuft");
   assert.equal(zustand(v), vorher);
-  assert.equal(lies(v, ".logs/ingest.lock"), "ingest 1\n", "fremde Sperre bleibt unberührt");
+  assert.equal(lies(v, ".logs/ingest.lock"), `ingest ${process.pid}\n`, "fremde Sperre bleibt unberührt");
   gibIngestSperreFrei(v);                                                              // gibt nur UNSERE Sperre frei
-  assert.equal(lies(v, ".logs/ingest.lock"), "ingest 1\n");
+  assert.equal(lies(v, ".logs/ingest.lock"), `ingest ${process.pid}\n`);
 });
 
 test("Erfolg räumt auf: Sperre frei, keine Arbeitskopie, kein Rest-Branch", async () => {

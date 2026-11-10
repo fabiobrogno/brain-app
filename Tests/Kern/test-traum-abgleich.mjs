@@ -191,7 +191,7 @@ test("Probe: der Traum gleicht vor dem Lauf nur im Trockenlauf ab — nichts wir
   assert.ok(ctx.traumBericht.hinweise.some((h) => /Abgleich für .* steht aus/.test(h)), JSON.stringify(ctx.traumBericht.hinweise));
 });
 
-test("Fehler beim Abgleich → dieses Projekt wird übersprungen, der Lauf geht mit den anderen weiter", async () => {
+test("Fehler beim Abgleich → dieses Projekt wird übersprungen, der Lauf geht mit den anderen weiter", { skip: process.platform === "win32" && "Verzeichnisrechte (chmod 0555) gibt es unter Windows nicht" }, async () => {
   const key2 = "-Users-test-zwei";
   const a = eingespielt({ automatik: { gedaechtnisTeilen: "an" } });
   // zweites Projekt: in der Wurzel und im Verlauf von Konto A; Konto B hat dort einen nicht beschreibbaren Projektordner → der Abgleich scheitert beim Verteilen

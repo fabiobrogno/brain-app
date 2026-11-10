@@ -2,6 +2,7 @@
 // kaputte Zielseite, Ingest-Sperre, Vault nicht auf main / lokale Änderung, Reste abgestürzter Läufe, Schreibfehler nach dem
 // Merge, pre-commit rot in der Probe. Der Grundablauf steht in test-tageslauf-lauf.mjs.
 import { test } from "node:test";
+import { nurUnix } from "./nur-unix.mjs";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -153,14 +154,14 @@ test("Ingest läuft (frische Sperre): nichts wird geschrieben, Status teilweise,
   const v = aufbau();
   fakt(v, "g1", "Orion Lüfter", "Orion hat jetzt zwei Lüfter.", "Orion hat jetzt zwei Lüfter");
   fakeKi([{ wenn: "FAKT:", antwort: neu(true) }]);
-  writeFileSync(join(v, ".logs", "ingest.lock"), "ingest 1\n");
+  writeFileSync(join(v, ".logs", "ingest.lock"), `ingest ${process.pid}\n`);
   const r1 = await lauf(v);
   assert.equal(r1.status, "teilweise");
   assert.match(r1.grund, /ingest/);
   assert.ok(existsSync(join(v, "00_inbox", "_vorschlaege", "g1.md")));
   assert.equal(git(v, "rev-list", "--count", "HEAD"), "1");
   assert.equal(P.leseLetzter(v).erfolgreich, false);
-  assert.equal(readFileSync(join(v, ".logs", "ingest.lock"), "utf8"), "ingest 1\n", "fremde Sperre bleibt");
+  assert.equal(readFileSync(join(v, ".logs", "ingest.lock"), "utf8"), `ingest ${process.pid}\n`, "fremde Sperre bleibt");
   rmSync(join(v, ".logs", "ingest.lock"));
   const r2 = await lauf(v, { jetzt: JETZT + 3600e3 });
   assert.deepEqual([r2.status, r2.zahlen.uebernommen], ["ok", 1]);
@@ -210,7 +211,7 @@ test("Reste eines abgestürzten Laufs (Branch, Arbeitskopie): der scharfe Lauf r
   sauber(v);
 });
 
-test("Schreibfehler NACH dem Merge: jede Übernahme steht trotzdem mit Commit im Protokoll, der Fehler wird vermerkt", { skip: process.getuid?.() === 0 }, async () => {
+test("Schreibfehler NACH dem Merge: jede Übernahme steht trotzdem mit Commit im Protokoll, der Fehler wird vermerkt", { skip: process.getuid?.() === 0 || nurUnix("Verzeichnisrechte (chmod 0555) gibt es unter Windows nicht") }, async () => {
   const v = aufbau();
   fakt(v, "g1", "Orion Lüfter", "Orion hat jetzt zwei Lüfter.", "Orion hat jetzt zwei Lüfter");
   fakt(v, "g2", "Orion Kühlung", "Orion kühlt jetzt mit Wasser.", "Orion kühlt jetzt mit Wasser");

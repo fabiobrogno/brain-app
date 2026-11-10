@@ -121,6 +121,7 @@ test("Dichte-Leiter, zwei Konten: voll → kompakt, gemessen an der Breite — n
 });
 
 test("Dichte-Leiter, drei Konten: kompakt → knappstes Fenster — nichts läuft über oder wird gekürzt", async ({ page }) => {
+  test.skip(process.platform === "win32", "Die Stufen hängen an der Schriftbreite; unter Windows (Segoe UI/Arial statt der Linux-Schrift) liegen die Schwellen anders — Messung statt Prüfung (R4-8: Schwellen je System offen)");
   await start(page, { konten: SECHS, werte: DREI_WERTE(), breite: 1600 });
   const gesehen = await durchfahre(page, 1600, 560);
   expect([...gesehen].sort((x, y) => ORDNUNG.indexOf(x) - ORDNUNG.indexOf(y))).toEqual(["kompakt", "knappstes"]);

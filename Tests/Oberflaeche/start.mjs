@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { mkdtempSync, appendFileSync } from "node:fs";
+import { mkdtempSync, appendFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 // BRAIN_WURZEL: alternative Wurzel mit Ressourcen/werkstatt (z. B. fester Backend-Stand), sonst dieses Repo
 const wurzel = process.env.BRAIN_WURZEL || join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -19,7 +19,7 @@ export async function erteileVertrauen(vault, support) {
 // { umgebung }: die GANZE Umgebung des Servers (statt der des Testlaufs), z. B. mit eigenem HOME und PATH — nötig, wenn die Werkstatt Programme suchen oder ein Konto-Home lesen soll
 // (Frag deinen Vault). BRAIN_APP_SUPPORT, BRAIN_TESTMODUS und KORTEX_KERN_PFAD setzt diese Funktion trotzdem selbst; { support } übernimmt einen vorbereiteten Support-Ordner.
 export async function starteServer(vault, { vertraut = true, kern = "", umgebung = null, support: vorgabe = null } = {}) {
-  const support = vorgabe || mkdtempSync(join(tmpdir(), "brain-ui-support-"));
+  const support = vorgabe || (process.platform === "win32" ? realpathSync.native : (p) => p)(mkdtempSync(join(tmpdir(), "brain-ui-support-"))); // Windows: Langform (siehe vault.mjs)
   if (vault && vertraut) await erteileVertrauen(vault, support);
   return new Promise((ok, nein) => {
     const env = { ...(umgebung || process.env), BRAIN_APP_SUPPORT: support, BRAIN_TESTMODUS: "1", BRAIN_VAULT: "", KORTEX_KERN_PFAD: kern }; // BRAIN_VAULT leer: ohne Vault-Argument nie der Vault aus der Umgebung des Entwicklers

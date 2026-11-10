@@ -344,7 +344,7 @@ test("laufende Einarbeitung (frische Sperre .logs/ingest.lock): der Hintergrund 
   const { mac, handy, support } = aufbau();
   commit(handy, "00_inbox/h.md", "# H\n"); g(handy, "push", "-q");
   mkdirSync(join(mac, ".logs"), { recursive: true });
-  writeFileSync(join(mac, ".logs", "ingest.lock"), "ingest 1\n");
+  writeFileSync(join(mac, ".logs", "ingest.lock"), `ingest ${process.pid}\n`);
   const vorher = kopf(mac);
   assert.equal(B.holen(mac, { support }).art, "beschaeftigt");
   assert.equal(B.abgleichen(mac, { support }).art, "beschaeftigt");

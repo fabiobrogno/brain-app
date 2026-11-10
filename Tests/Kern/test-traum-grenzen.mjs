@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 import { isoliere, git, JETZT } from "./tageslauf-hilfe.mjs";
 import { fakeSonnet, FAKE_SONNET } from "./pflege-hilfe.mjs";
+import { nurUnix } from "./nur-unix.mjs";
 import { nutzer } from "./verlauf-fixture.mjs";
 import { traumAufbau, traumRegel, GUTER_TRAUM, DATEIEN, KEY, fm, VERLAUF } from "./traum-hilfe.mjs";
 // Zugangsdaten- und Pfad-Muster der Fixtures zur Laufzeit zusammensetzen — der Publish-Check darf im Quelltext nichts Echtes sehen.
@@ -292,7 +293,7 @@ test("nichts zu ändern: leerer Bericht, unveränderte Dateien → Status nichts
   assert.equal(s.anzahl(), 1);
 });
 
-test("die KI bekommt Rechte nur im Arbeitsordner; Vault, Wurzel und Konten sind zusätzlich für sie gesperrt", () => {
+test("die KI bekommt Rechte nur im Arbeitsordner; Vault, Wurzel und Konten sind zusätzlich für sie gesperrt", { skip: nurUnix("die Regelmuster Read(//Users/…) sind POSIX-Pfade; die Form für Windows-Laufwerkspfade in Claude-Code-Rechten ist ungeklärt (R4-8: offen)") }, () => {
   const { tempOrdner } = { tempOrdner: (n) => join(process.env.BRAIN_TAGESLAUF_CACHE, n) };
   const kopie = tempOrdner("arbeit");
   mkdirSync(kopie, { recursive: true });

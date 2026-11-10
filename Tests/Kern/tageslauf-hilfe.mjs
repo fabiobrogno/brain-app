@@ -1,7 +1,7 @@
 // .tools/tests/tageslauf-hilfe.mjs — Test-Hilfen für den Tageslauf (B2). Nie echtes ~/brain, nie echtes claude/launchctl.
 // Vaults liegen in tempOrdner (verlauf-fixture räumt sie beim Prozessende weg), Pfade mit Leerzeichen und Umlaut.
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, appendFileSync, realpathSync } from "node:fs";
-import { join, dirname, relative } from "node:path";
+import { join, dirname, relative, delimiter } from "node:path";
 import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -78,7 +78,7 @@ export function neuerTestVault({ seiten = {}, automatik = { tageslauf: "an" }, h
   // P4: Der Kern führt Hooks nur aus seinem eigenen Ordner git-hooks aus (git-sicher); der Test-Hook im Vault wird ausdrücklich erlaubt (nur die Umgebung
   // des Tests kann das, ein Vault nicht) und absolut eingetragen.
   const hooks = realpathSync(join(v, ".hooks"));
-  process.env.BRAIN_GIT_HOOKS_ERLAUBT = [process.env.BRAIN_GIT_HOOKS_ERLAUBT, hooks].filter(Boolean).join(":");
+  process.env.BRAIN_GIT_HOOKS_ERLAUBT = [process.env.BRAIN_GIT_HOOKS_ERLAUBT, hooks].filter(Boolean).join(delimiter);
   git(v, "config", "core.hooksPath", hooks);
   return v;
 }

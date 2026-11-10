@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, isAbsolute } from "node:path";
 import { spawnSync } from "node:child_process";
 import { isoliere, neuerTestVault, FAKE_BEFEHL, KIT } from "./tageslauf-hilfe.mjs";
 import { tempOrdner, nutzer, assistent, schreibeVerlauf } from "./verlauf-fixture.mjs";
@@ -83,7 +83,7 @@ test("dienstAn mit ausdrücklichem Profil: ein relativer oder ~-Pfad wird absolu
   process.env.BRAIN_LAUNCHCTL = fakeLaunchctl();
   try {
     const rel = await mitProfil(undefined, () => DIENST_AN(v, { profil: "profile/zweit" }));
-    assert.ok(rel.profil.startsWith("/") && rel.profil.endsWith("/profile/zweit"), rel.profil);
+    assert.ok(isAbsolute(rel.profil) && /[\\/]profile[\\/]zweit$/.test(rel.profil), rel.profil);
     const tilde = await mitProfil(undefined, () => DIENST_AN(v, { profil: "~/.claude-zweit" }));
     assert.equal(tilde.profil, join(HOME, ".claude-zweit"));
   } finally { D.dienstAus(v, { home: HOME }); delete process.env.BRAIN_LAUNCHCTL; }
