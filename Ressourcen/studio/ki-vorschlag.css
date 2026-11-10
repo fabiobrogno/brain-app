@@ -2,6 +2,7 @@
    Nur Tokens aus studio.css/schemata.css (hell, dunkel und alle Schemas wechseln dort). Kein natives Feld. */
 
 /* ---------- Bausteine ---------- */
+.kiv-neu { margin: 0; padding: 9px 14px; font-size: 12.5px; line-height: 1.5; color: var(--text); border: 1px solid var(--linie-stark); border-left: 3px solid var(--akzent, var(--linie-stark)); border-radius: var(--r-xl); background: var(--erhoben); text-wrap: pretty; }
 .kiv-leise { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-2); text-wrap: pretty; }
 .kiv-rumpf { display: grid; gap: 12px; min-width: 0; }
 .kiv-karte { border: 1px solid var(--linie-stark); border-radius: var(--r-xl); background: var(--erhoben); overflow: hidden; }

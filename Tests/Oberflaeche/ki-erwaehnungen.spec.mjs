@@ -179,6 +179,32 @@ test("Filter „Unwahrscheinliche ausblenden“: nur die Stelle „wohl nicht“
   expect(QUELLEN.map(lese)).toEqual(vorher); // nichts verlinkt, nichts geändert
 });
 
+for (const [schema, farbe] of schemata) {
+  test(`Bei aktivem Filter verlinkt der Knopf nur die sichtbaren Stellen („Sichtbare verlinken“), ausgeblendete bleiben unberührt (${schema})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: farbe, reducedMotion: "reduce" });
+    await aufbauen();
+    const vorher = Object.fromEntries(QUELLEN.map((q) => [q, lese(q)]));
+    await oeffne(page);
+    await knopf(page).click();
+    await phase(page, "ergebnis");
+    const alle = ein(page).locator('[data-aktion="erw-alle"]');
+    await expect(alle).toHaveText("Alle verlinken");
+    const schalter = status(page).locator("[data-erw-ki-filter]");
+    await schalter.click();
+    await expect(alle).toHaveText("Sichtbare verlinken");
+    const nein = await ein(page).locator('[data-erw-stelle]:has([data-erw-badge="nein"])').locator("xpath=ancestor::*[@data-erw-notiz]").getAttribute("data-erw-notiz");
+    if (process.env.FOLGE_BILDER) { mkdirSync(process.env.FOLGE_BILDER, { recursive: true }); await page.waitForTimeout(300); await ein(page).screenshot({ path: join(process.env.FOLGE_BILDER, `folge-sichtbare-verlinken-${schema}.png`) }); }
+    await schalter.click();
+    await expect(alle).toHaveText("Alle verlinken"); // Filter aus: wieder alle
+    await schalter.click();
+    await expect(alle).toHaveText("Sichtbare verlinken");
+    await alle.click();
+    await expect(page.locator(".toast").last()).toContainText("2 Erwähnungen von „Zebraquarz“ verlinkt", { timeout: 10000 });
+    expect(lese(nein)).toBe(vorher[nein]); // die ausgeblendete Stelle („wohl nicht“) bleibt wie sie war
+    for (const q of QUELLEN.filter((x) => x !== nein)) expect(lese(q)).toContain("[[Zebraquarz]]");
+  });
+}
+
 test("Verlinken bleibt der vorhandene Weg: Link in der anderen Notiz, Hinweis mit Rückgängig; die übrigen Badges bleiben", async ({ page }) => {
   await aufbauen();
   await oeffne(page);

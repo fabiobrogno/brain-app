@@ -181,3 +181,27 @@ test("Ersatz: unsichtbare Zeichen nur mit Vorbild in der Auswahl; ZWJ zwischen E
   assert.equal(Er("x\u202Ey", "x\u202Ey"), false, "bidi-Override nie");
   assert.equal(Er("x\u2066y", "x\u2066y"), false);
 });
+
+test("Ersatz: Flaggen-Tag-Folge nur ganz und mit Vorbild; freie Tag-Zeichen weiter verboten", () => {
+  const schottland = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}";
+  const Er = (e, a) => pruefeAntwort("ersatz", { ersatz: e }, { auswahl: a }).ok;
+  assert.equal(Er(`Aus ${schottland} kommt`, `Aus ${schottland} stammt`), true, "gültige Folge mit Vorbild");
+  assert.equal(Er(`Aus ${schottland} kommt`, "Aus Schottland stammt"), false, "gültige Folge ohne Vorbild");
+  assert.equal(Er(`Aus ${schottland}\u{E0041} kommt`, `Aus ${schottland}`), false, "freies Tag-Zeichen daneben");
+  assert.equal(Er("Aus \u{E0067}\u{E007F} kommt", `Aus ${schottland}`), false, "Tags ohne Flaggen-Anfang");
+  assert.equal(Er("Aus \u{1F3F4}\u{E0067}\u{E0062} kommt", "Aus \u{1F3F4}\u{E0067}\u{E0062}"), false, "Folge ohne Abschluss U+E007F");
+});
+
+test("Warnzeilen: protokoll-relative Links, gefährliche Schemata, Kommentare und nicht vault-relative Link-Ziele", () => {
+  const art = (e, a = "") => warnungenFuerErsatz(a, e).map((x) => x.art).sort();
+  assert.deepEqual(art("siehe //evil.example/x"), ["link-extern"]);
+  assert.deepEqual(art("[x](//evil.example/x)"), ["link-extern"]);
+  assert.deepEqual(art("[x](javascript:alert(1))"), ["link-extern"]);
+  assert.deepEqual(art("[x](file:///etc/passwd)"), ["link-extern"]);
+  assert.deepEqual(art("[x](data:text/html;base64,AAAA)"), ["link-extern"]);
+  assert.deepEqual(art("[x](/etc/passwd)"), ["link-extern"]);
+  assert.deepEqual(art("Text <!-- versteckt --> Ende"), ["html"]);
+  assert.deepEqual(art("[x](notiz.md) [y](../a/b.md#k) [z](#abschnitt) und https://www.a.example/p"), ["link-extern"], "nur die https-Adresse");
+  assert.deepEqual(art("[x](notiz.md) [y](../a/b.md#k) [z](#abschnitt)"), [], "vault-relativ ist keine Warnung");
+  assert.deepEqual(art("[x](javascript:a())", "[x](javascript:a())"), [], "was die Auswahl schon hatte");
+});

@@ -213,9 +213,10 @@ export function erzeugeKi(o) {
   }
   function vorschlagZeile() {
     const v = S.vorschlag, an = !!v?.an, name = offenerVault()?.name || "";
+    const neuNamen = an && Array.isArray(v.fehlend) ? v.fehlend.filter((f) => TV.gesendet[f]).map((f) => TV.gesendet[f].titel) : [];
     const sch = umschalter({ an, label: TV.einstellung.titel, daten: { "data-kk": "vorschlag-schalter" }, aufAenderung: (w) => schalteVorschlag(w) });
     return einstellKarte(einstellZeile({ id: "ki-vorschlaege", titel: TV.einstellung.titel, steuerung: sch, klasse: "kx-vorschlag-zeile",
-      text: v ? (an ? TV.einstellung.an(v.kontoName || "", v.seit ? zeitText(v.seit) : "") : TV.einstellung.aus(name)) : "" }));
+      text: v ? (an ? TV.einstellung.an(v.kontoName || "", v.seit ? zeitText(v.seit) : "") + (neuNamen.length ? TV.einstellung.neueFunktion(neuNamen) : "") : TV.einstellung.aus(name)) : "" }));
   }
   // Anmeldestand je Claude-/Codex-Konto: das Programm selbst fragen (App), das Ergebnis der Werkstatt melden (sie merkt sich, ob das Konto früher angemeldet war)
   const identAn = () => o.einstellung?.lies?.("kiKontonamen") !== false; // Schalter „Kontonamen vom Programm zeigen“ (Standard an)

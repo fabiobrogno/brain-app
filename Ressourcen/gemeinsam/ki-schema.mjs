@@ -37,7 +37,10 @@ const IMMER_VERBOTEN = /[\u{E0000}-\u{E007F}\u202A-\u202E\u2066-\u2069]/u;
 const BILD = /\p{Extended_Pictographic}/u;
 // Nur Text-Ersatz: unsichtbare Zeichen (z. B. ZWJ, weiches Trennzeichen) sind erlaubt, wenn genau dieses Zeichen schon in der gesendeten Auswahl steht;
 // ein ZWJ zwischen zwei Emojis (ggf. mit Variationsselektor) immer. Alles andere bleibt verboten.
+// Ausnahme: Flaggen-Folgen (Schottland, Wales … = U+1F3F4, Tag-Zeichen, U+E007F) nur als ganze, gültige Folge und nur, wenn genau diese Folge in der Auswahl steht; freie Tag-Zeichen bleiben verboten.
+const FLAGGEN_FOLGE = /\u{1F3F4}[\u{E0020}-\u{E007E}]+\u{E007F}/gu;
 function nurErlaubtesUnsichtbar(s, vorbild) {
+  s = s.replace(FLAGGEN_FOLGE, (m) => (vorbild.includes(m) ? "\u{1F3F4}" : m));
   if (IMMER_VERBOTEN.test(s)) return false;
   const z = [...s];
   for (let i = 0; i < z.length; i++) {
@@ -131,11 +134,13 @@ export function schemaFuer(funktion, ctx = {}) {
 export function warnungenFuerErsatz(auswahl, ersatz) {
   const a = String(auswahl ?? ""), e = String(ersatz ?? "");
   const w = [];
-  const url = (s) => new Set((s.match(/\b(?:https?|ftp|mailto):[^\s)>\]]+|\bwww\.[^\s)>\]]+/gi) || []).map((x) => x.toLowerCase()));
-  const neueUrls = [...url(e)].filter((u) => !url(a).has(u));
+  const url = (s) => new Set((s.match(/\b(?:https?|ftp|mailto|javascript|file|data|vbscript):[^\s)>\]]+|\bwww\.[^\s)>\]]+|(?<![:\w/])\/\/[^\s)>\]]+/gi) || []).map((x) => x.toLowerCase()));
+  // Ziele von Markdown-Links `](…)`: alles, was nicht vault-relativ ist (Schema, `//`, `\\`, `/…`, `~`), zählt als Adresse nach außen
+  const ziele = (s) => new Set([...s.matchAll(/\]\(\s*<?([^)\s>]*)/g)].map((m) => m[1].trim().toLowerCase()).filter((z) => /^(?:[\/\\~]|[a-z][a-z0-9+.-]*:)/.test(z)));
+  const neueUrls = [...new Set([...url(e), ...ziele(e)])].filter((u) => !url(a).has(u) && !ziele(a).has(u));
   if (neueUrls.length) w.push({ art: "link-extern", ziele: neueUrls.slice(0, 5).map((u) => u.replace(/^[a-z]+:\/\//, "").slice(0, 80)) });
   if (/!\[[^\]]*\]\([^)]*\)/.test(e) && !/!\[[^\]]*\]\([^)]*\)/.test(a)) w.push({ art: "bild" });
-  if (/<\/?[a-zA-Z][^>]*>/.test(e) && !/<\/?[a-zA-Z][^>]*>/.test(a)) w.push({ art: "html" });
+  if ((/<\/?[a-zA-Z][^>]*>/.test(e) && !/<\/?[a-zA-Z][^>]*>/.test(a)) || (e.includes("<!--") && !a.includes("<!--"))) w.push({ art: "html" });
   if (/^ {0,3}(`{3,}|~{3,})/m.test(e) && !/^ {0,3}(`{3,}|~{3,})/m.test(a)) w.push({ art: "code" });
   if (/^---\s*$/m.test(e) && !/^---\s*$/m.test(a)) w.push({ art: "front-matter" });
   const wiki = (s) => new Set((s.match(/\[\[[^\]\n]+\]\]/g) || []).map((x) => x.toLowerCase()));

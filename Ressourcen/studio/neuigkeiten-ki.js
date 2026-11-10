@@ -21,14 +21,14 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
   const panel = h("section", { klasse: "nk-kip", "data-nk-kip": "", "aria-label": TN.ki_zusammenfassen.panel, hidden: true });
   wurzel.append(zeile, panel);
 
-  let bereit = null, st = kiStatus(null), sigZeile = "", ktVoll = false, knopfEl = null, ktZeile = null, prueft = false;
+  let bereit = null, st = kiStatus(null, "zusammenfassung"), sigZeile = "", ktVoll = false, knopfEl = null, ktZeile = null, prueft = false;
   let zustand = { phase: "ruhig" }, lauf = null, nr = 0, gesendetOffen = false, uhr = 0, vaultMerk = null;
 
   // ---------- Status (Konto, Einwilligung, Sperre) ----------
   async function frisch() {
     if (vaultMerk !== (S.info?.vault || null)) { vaultMerk = S.info?.vault || null; bereit = null; }
     try { bereit = await api.kiVorschlagBereit(); } catch { bereit = null; }
-    st = kiStatus(bereit);
+    st = kiStatus(bereit, "zusammenfassung");
     zeichneZeile();
     return st;
   }
@@ -81,7 +81,7 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
   function starte() {
     const mein = ++nr, d = daten();
     lauf?.abbrechen();
-    zustand = { phase: "laeuft", seit: d?.seit || null, start: Date.now(), gesendet: null, ausgenommen: 0, wirdAbgebrochen: false };
+    zustand = { phase: "laeuft", vault: S.info?.vault || null, seit: d?.seit || null, start: Date.now(), gesendet: null, ausgenommen: 0, wirdAbgebrochen: false };
     zeichnePanel(); zeichneZeile();
     clearInterval(uhr); uhr = setInterval(() => { const z = panel.querySelector("[data-nk-kip-zeit]"); if (z && zustand.phase === "laeuft" && zustand.gesendet) z.textContent = TV.lauf.arbeitet(Math.floor((Date.now() - zustand.start) / 1000)); }, 1000);
     const l = starteVorschlag({ api, wiederholeBeiLaeuft: true, eingabe: { funktion: "zusammenfassung", konto: st.konto.id, ...(d?.seit ? { seit: d.seit } : {}) },
@@ -99,7 +99,7 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
       clearInterval(uhr);
       zustand = { ...zustand, phase: "fehler", text: err?.message || TV.lauf.fehlerAllgemein };
       zeichnePanel(); zeichneZeile();
-      if (err?.daten?.art === "einwilligung" || err?.daten?.art === "einwilligung-konto") await frisch(); // die Einwilligung ist weg: der nächste Klick fragt wieder
+      if (String(err?.daten?.art || "").startsWith("einwilligung")) await frisch(); // die Einwilligung ist weg: der nächste Klick fragt wieder
     });
   }
   function abbrechen() {
@@ -113,6 +113,7 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
   async function ablegen(knopf) {
     const e = zustand.ergebnis;
     if (!e || zustand.abgelegt) return;
+    if (zustand.vault !== (S.info?.vault || null)) { toast(TN.ki_zusammenfassen.anderesVault, { fehler: true }); schliesse(); return; } // die Zusammenfassung gehört zu dem Vault, in dem sie entstand
     const { titel, text } = baueMerkText(e, { seitText: zustand.seit ? zeitText(zustand.seit) : "", datum: heuteIso() });
     knopf.setAttribute("aria-busy", "true"); knopf.disabled = true;
     try {
@@ -168,7 +169,7 @@ export function erzeugeKiZusammenfassung({ S, oeffne, daten, zeitText }) {
 
   // Vault gewechselt oder Zeitraum geändert: ein laufender Lauf endet, alles Gezeigte gehört zum alten Stand
   function zuruecksetzen() { lauf?.abbrechen(); lauf = null; schliesse(); }
-  function vergessen() { zuruecksetzen(); ktZeile?.stopp(); ktZeile = null; prueft = false; bereit = null; st = kiStatus(null); sigZeile = ""; ktVoll = false; knopfEl = null; vaultMerk = null; zeile.replaceChildren(); wurzel.hidden = true; gesendetOffen = false; }
+  function vergessen() { zuruecksetzen(); ktZeile?.stopp(); ktZeile = null; prueft = false; bereit = null; st = kiStatus(null, "zusammenfassung"); sigZeile = ""; ktVoll = false; knopfEl = null; vaultMerk = null; zeile.replaceChildren(); wurzel.hidden = true; gesendetOffen = false; }
   window.addEventListener("pagehide", () => { if (zustand.phase === "laeuft") lauf?.abbrechen(); });
 
   return { knoten: wurzel, laden: frisch, verfuegbar, aktualisiere: zeichneZeile, zuruecksetzen, vergessen, _zustand: () => zustand };

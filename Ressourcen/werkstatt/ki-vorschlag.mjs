@@ -14,7 +14,7 @@
 import { rmSync } from "node:fs";
 import { randomBytes, createHmac, createHash, timingSafeEqual } from "node:crypto";
 import { HttpFehler, inboxOrdnerVon, vorlagenOrdnerVon, falte, vorschauOrdnerAus } from "../gemeinsam/basis.mjs";
-import { aktivesKonto, vorschlaegeFuer, setzeVorschlaege, echterOrt } from "../gemeinsam/ki-konten.mjs";
+import { aktivesKonto, vorschlaegeFuer, setzeVorschlaege, echterOrt, KI_FUNKTIONEN } from "../gemeinsam/ki-konten.mjs";
 import { kennungVault, melde } from "../gemeinsam/aktivitaet.mjs";
 import { titelAus, wikilinkZiele, kopfLaenge } from "../gemeinsam/notizen.mjs";
 import { extrahiereTags, fuegeTagsHinzu } from "../gemeinsam/tags.mjs";
@@ -32,7 +32,7 @@ export const GRENZEN = {
   stapel: 10, lokal: 40, tagsListe: 40,             // „Für alle“: höchstens so viele Einträge auf einmal · lokale Vorschläge: Einträge je Anfrage · Tags ähnlicher Notizen im Paket
   budgetUsd: { posteingang: { haiku: 0.15, sonnet: 0.15 }, text: { haiku: 0.15, sonnet: 0.6 }, zusammenfassung: { haiku: 0.10, sonnet: 0.10 }, erwaehnungen: { haiku: 0.10, sonnet: 0.10 } },
 };
-const FUNKTIONEN_K0 = ["posteingang", "text", "zusammenfassung", "erwaehnungen"];
+const FUNKTIONEN_K0 = KI_FUNKTIONEN; // eine Quelle (gemeinsam/ki-konten.mjs): was „bereit“ meldet, was der Dialog nennt, was die Einwilligung deckt
 const EINGEBAUT_ENTFERNT = ["Bash", "Edit", "MultiEdit", "Write", "NotebookEdit", "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Task", "Agent"];
 const MCP_BRAIN_ENTFERNT = ["brain_suchen", "brain_lesen", "brain_kontext", "brain_merken", "brain_gesundheit", "brain_vaults", "brain_verlauf", "brain_aufgaben", "brain_aufgabe_anlegen", "brain_aufgabe_status"].map((n) => `mcp__brain__${n}`);
 
@@ -151,10 +151,11 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
   };
   function einwilligung(v) {
     const daten = zugriff.ladeKonten({ lesend: true });
-    const e = daten ? vorschlaegeFuer(daten, v.wurzel) : { an: false, seit: null, konto: null };
+    const e = daten ? vorschlaegeFuer(daten, v.wurzel) : { an: false, seit: null, konto: null, funktionen: [], fehlend: [] };
     // gilt nur, solange das genannte Konto diesen Vault noch lesen darf (sonst fail-closed „aus“)
     const noch = e.an && daten && darfLesen(v, e.konto, daten.konten[e.konto], daten) && daten.konten[e.konto].programm === "claude";
-    return { an: !!noch, seit: noch ? e.seit : null, konto: noch ? e.konto : null, kontoName: noch ? daten.konten[e.konto].name : null };
+    // funktionen: wofür die Einwilligung gilt · fehlend: Funktionen, die später dazukamen (der Dialog fragt für sie neu)
+    return { an: !!noch, seit: noch ? e.seit : null, konto: noch ? e.konto : null, kontoName: noch ? daten.konten[e.konto].name : null, funktionen: noch ? e.funktionen : [], fehlend: noch ? e.fehlend : [...KI_FUNKTIONEN] };
   }
   function bereit(v) {
     const daten = zugriff.ladeKonten({ lesend: true });
@@ -179,7 +180,7 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     if (e.an) {
       // Einschalten verlangt ein vertrautes Vault und ein Claude-Konto, das diesen Vault mindestens lesen darf (dieselbe Prüfung wie bei jeder Anfrage)
       pruefeKonto(v, e.konto, { vertrauensText: "Dieser Vault ist noch nicht als dein eigener bestätigt. Bestätige ihn zuerst; bis dahin geht keine Anfrage an eine KI.", programmText: "KI-Vorschläge gehen bisher nur mit Claude Code. Wähle ein Claude-Konto." });
-      setzeVorschlaege(support, v.wurzel, { an: true, konto: e.konto, jetzt: new Date(jetzt()) });
+      setzeVorschlaege(support, v.wurzel, { an: true, konto: e.konto, jetzt: new Date(jetzt()), funktionen: KI_FUNKTIONEN });
     } else {
       setzeVorschlaege(support, v.wurzel, { an: false });
       brichAb("nutzer"); // ohne Einwilligung läuft nichts weiter und bleibt nichts liegen
@@ -353,6 +354,8 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     const w = vorschlaegeFuer(daten, v.wurzel);
     if (!w.an) throw new HttpFehler(409, "KI-Vorschläge sind für diesen Vault nicht eingeschaltet.", { art: "einwilligung" });
     if (w.konto !== kontoId) throw new HttpFehler(409, "Für dieses KI-Konto hast du KI-Vorschläge in diesem Vault nicht eingeschaltet.", { art: "einwilligung-konto" });
+    // Eine Funktion, die erst nach der Einwilligung dazukam, ist nicht eingewilligt (fail-closed): der Dialog fragt neu
+    if (!w.funktionen.includes(e.funktion)) throw new HttpFehler(409, "Diese KI-Funktion ist neu: Du hast ihr in diesem Vault noch nicht zugestimmt.", { art: "einwilligung-funktion", funktion: e.funktion });
     if (frageLaeuft()) throw new HttpFehler(409, "Es läuft gerade eine Frage an deinen Vault. Warte auf die Antwort.", { art: "frage-laeuft" });
     if (aktiv && !aktiv.fertig && !aktiv.endet && aktiv.vault === v.wurzel) throw new HttpFehler(409, "Es läuft schon eine Anfrage. Warte auf die Antwort oder brich sie ab.", { art: "laeuft" });
     // Kontingent: bei 100 % keine Anfrage (ohne Wert: kein Sperren)
@@ -751,5 +754,12 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     return { ok: true, art: rr.art, geaendert, ...(erg && erg.nach ? { nach: erg.nach } : {}), ...(erg && erg.pfad ? { pfad: erg.pfad } : {}) };
   }
 
-  return { bereit, einwilligung, setzeEinwilligung, start, stand, abbrechen, anwenden, zurueck, lokal, brichAb, laeuft: () => startet || !!(aktiv && !aktiv.fertig) || !!(stapel && !stapel.fertig), _speicherGroesse: (v) => (speicher.get(kennungVault(v.wurzel)) || new Map()).size };
+  // K2 „Als Aufgabe anlegen“: Kortex legt die Aufgaben selbst an (/api/aufgaben); hier entsteht nur der Protokolleintrag wie bei `anwenden`: „KI-Vorschlag übernommen“, mit Quelle, ohne Inhalt (nur die Zahl).
+  function aufgabenAngelegt(e, v) {
+    const n = e && typeof e === "object" ? e.anzahl : null;
+    if (!Number.isInteger(n) || n < 1 || n > LIMITS.aufgabenListe) throw new HttpFehler(400, "„anzahl“ ist eine Zahl von 1 bis 10.");
+    melde(v.wurzel, { art: "datei-aktion", wer: "KI-Vorschlag", vaultName: v.name, text: `KI-Vorschlag übernommen: ${n === 1 ? "Aufgabe" : `${n} Aufgaben`} angelegt` }, { support });
+    return { ok: true };
+  }
+  return { bereit, einwilligung, setzeEinwilligung, start, stand, abbrechen, anwenden, aufgabenAngelegt, zurueck, lokal, brichAb, laeuft: () => startet || !!(aktiv && !aktiv.fertig) || !!(stapel && !stapel.fertig), _speicherGroesse: (v) => (speicher.get(kennungVault(v.wurzel)) || new Map()).size };
 }

@@ -195,6 +195,7 @@ export const api = {
   kiVorschlagEinwilligung: ({ an, konto, vault }) => anfrage("PUT", "/api/ki/vorschlag/einwilligung", { an: !!an, ...(konto ? { konto } : {}), vault }),
   kiVorschlagStart: (daten) => anfrage("POST", "/api/ki/vorschlag/start", daten),
   kiVorschlagStand: (id, version) => anfrage("GET", "/api/ki/vorschlag/stand" + q(version === undefined ? { id } : { id, v: version })),
+  kiVorschlagAufgabenAngelegt: (anzahl) => anfrage("POST", "/api/ki/vorschlag/aufgaben-angelegt", { anzahl }),
   kiVorschlagZurueck: (id) => anfrage("POST", "/api/ki/vorschlag/zurueck", { id }),
   kiVorschlagLokal: (pfade) => anfrage("POST", "/api/ki/vorschlag/lokal", { pfade }),
   kiVorschlagAbbrechen: (id) => anfrage("POST", "/api/ki/vorschlag/abbrechen", { id }),

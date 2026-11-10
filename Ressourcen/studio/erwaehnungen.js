@@ -145,7 +145,11 @@ export function erzeugeErwaehnungen(ctx) {
     if (r.mehrdeutig) { ki.keineListe(pfad); fuelle(host, TE.ein.titel, h("p", { klasse: "leise erw-leer", text: TE.ein.mehrdeutig })); return; }
     const weiter = r.offen > 0 || !r.vollstaendig;
     if (r.notizen.length) {
-      const alle = abgleichOffen() ? null : baueKnopf({ text: TE.ein.alleVerlinken, groesse: "s", aktion: "erw-alle", aufKlick: (ev) => verlinkeAlle(pfad, r.titel, ev.currentTarget) });
+      // Bei aktivem KI-Filter („wohl nicht“ ausgeblendet) verlinkt der Knopf nur, was man sieht; er heißt dann „Sichtbare verlinken“
+      const sichtbare = () => r.notizen.flatMap((n) => n.stellen.filter((s) => !ki.ausgeblendet({ pfad: n.pfad, ...s })).map((s) => ({ pfad: n.pfad, start: s.start, treffer: s.treffer, vor: s.vor, nach: s.nach, hash: n.hash })));
+      const nurSichtbare = () => r.notizen.some((n) => n.stellen.some((s) => ki.ausgeblendet({ pfad: n.pfad, ...s })));
+      const alle = abgleichOffen() ? null : baueKnopf({ text: TE.ein.alleVerlinken, groesse: "s", aktion: "erw-alle", aufKlick: (ev) => (nurSichtbare() ? verlinkeStellen(pfad, r.titel, sichtbare(), ev.currentTarget) : verlinkeAlle(pfad, r.titel, ev.currentTarget)) });
+      if (alle) { const beschrifte = () => { const t = alle.querySelector(".bs-knopf-text"); if (t) t.textContent = nurSichtbare() ? TE.ein.sichtbareVerlinken : TE.ein.alleVerlinken; }; ki.beiAenderung = beschrifte; beschrifte(); }
       kinder.push(h("div", { klasse: "erw-kopf" }, h("span", { klasse: "erw-summe", "data-erw-summe": "", text: TE.ein.zusammen(r.anzahlStellen, r.anzahlNotizen) }), alle), ki.knoten);
       const wurzel = h("div", { klasse: "erw-liste" });
       const zeichneListe = (alleNotizen) => {
