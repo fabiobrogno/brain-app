@@ -595,16 +595,25 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
   // ---------- Lokale Vorschläge (ohne KI, ohne Einwilligung: nichts verlässt den Mac) ----------
   // Gleicher Titel → Duplikat · der Eintrag nennt den Titel einer Notiz → Verlinken · ein Tag des Eintrags heißt wie ein Ordner → Verschieben. Alles aus dem Notiz-Index; höchstens 3 je Eintrag.
   // Dieselben Karten, derselbe Speicher, dieselbe Übernahme über id + Token wie bei der KI (Marke „ohne KI“).
-  function lokaleVorschlaege(v, n, index, erwaehnt, ort) {
-    const titel = titelAus(n.pfad, n.inhalt), nt = flachTitel(titel);
+  // Der Pool (mögliche Ziele) und die Ordner hängen nicht vom einzelnen Eintrag ab: einmal je Anfrage rechnen statt je Eintrag (bei 5.000 Notizen und 40 Einträgen ~2 s, die die Werkstatt blockierten)
+  function lokalerPool(v, index, ort) {
     const verwaltet = (pfad) => { const f = falte(pfad); return !v.kiOrtErlaubt(pfad, true) || f.startsWith(`${ort.vorlagen}/`) || (ort.aufgaben && f.startsWith(`${ort.aufgaben}/`)); }; // dieselbe Regel wie für die KI (Wiki, Archiv, CLAUDE.md … nie ein Ziel)
-    const pool = index.filter((z) => z && typeof z.pfad === "string" && z.pfad !== n.pfad && !z.generiert && !verwaltet(z.pfad));
+    const pool = index.filter((z) => z && typeof z.pfad === "string" && !z.generiert && !verwaltet(z.pfad));
+    const imPool = new Set(pool.map((z) => z.pfad));
+    let ordner = null; // erst bei Bedarf (nur wenn ein Eintrag Tags hat und noch Platz für einen Vorschlag ist)
+    const ordnerPool = () => (ordner ||= ordnerAus(pool.filter((z) => !falte(z.pfad).startsWith(`${ort.inbox}/`))).filter((o) => v.kiOrtErlaubt(`${o.pfad}/x.md`)));
+    const nachTitel = new Map(); // flacher Titel → Notizen mit diesem Titel (Duplikate)
+    for (const z of pool) { const t = flachTitel(z.titel || ""); if (t) (nachTitel.get(t) || nachTitel.set(t, []).get(t)).push(z); }
+    return { pool, imPool, ordnerPool, nachTitel };
+  }
+  function lokaleVorschlaege(v, n, index, erwaehnt, ort, vorbereitet = lokalerPool(v, index, ort)) {
+    const titel = titelAus(n.pfad, n.inhalt), nt = flachTitel(titel);
     const zielVon = (pfad) => { try { const k = v.lies(pfad); return { pfad: k.pfad, hash: k.hash, titel: sauberText(titelAus(k.pfad, k.inhalt), 120) }; } catch { return null; } };
     const aus = [];
     const dupPfade = new Set();
-    if (nt.length >= 3) for (const z of pool) {
+    if (nt.length >= 3) for (const z of vorbereitet.nachTitel.get(nt) || []) {
       if (aus.length >= 1) break;
-      if (flachTitel(z.titel || "") !== nt) continue;
+      if (z.pfad === n.pfad) continue;
       if (falte(z.pfad).startsWith(`${ort.inbox}/`) && z.pfad > n.pfad) continue; // zwei gleiche Einträge im Posteingang: nur der spätere bekommt den Vorschlag, einer bleibt
       const kand = zielVon(z.pfad); if (!kand) continue;
       dupPfade.add(z.pfad);
@@ -613,15 +622,14 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     let nv = 0;
     for (const [pfad, st] of erwaehnt) {
       if (nv >= 2 || aus.length >= 3) break;
-      if (dupPfade.has(pfad) || !pool.some((z) => z.pfad === pfad)) continue;
+      if (dupPfade.has(pfad) || pfad === n.pfad || !vorbereitet.imPool.has(pfad)) continue;
       const kand = zielVon(pfad); if (!kand) continue;
       nv++;
       aus.push({ art: "verlinken", kand, beleg: sauberText(st.treffer, 200), begruendung: `Der Eintrag nennt ${q(sauberText(st.treffer, 60))} — so heißt eine andere Notiz.`, sicherheit: "hoch", anhaengen: false });
     }
     if (aus.length < 3) {
-      const ordnerPool = ordnerAus(pool.filter((z) => !falte(z.pfad).startsWith(`${ort.inbox}/`))).filter((o) => v.kiOrtErlaubt(`${o.pfad}/x.md`));
       for (const tag of extrahiereTags(n.inhalt)) {
-        const o = ordnerPool.find((x) => falte(x.pfad.split("/").pop()) === falte(tag.split("/").pop()));
+        const o = vorbereitet.ordnerPool().find((x) => falte(x.pfad.split("/").pop()) === falte(tag.split("/").pop()));
         if (!o) continue;
         aus.push({ art: "verschieben", ord: { pfad: o.pfad, name: o.pfad }, beleg: sauberText(`#${tag}`, 100), begruendung: `Der Tag #${sauberText(tag, 60)} passt zum Ordner ${q(sauberText(o.pfad, 100))}.`, sicherheit: "hoch" });
         break;
@@ -635,11 +643,11 @@ export function erzeugeVorschlag({ support, konten, basisEnv = process.env, home
     let aufgaben = ""; try { aufgaben = falte(await v.aufgabenOrdnerName()); } catch { /* ohne */ }
     const ort = { inbox: falte(inboxOrdnerVon(v.wurzel)), vorlagen: falte(vorlagenOrdnerVon(v.wurzel)), aufgaben };
     const kennung = kennungVault(v.wurzel);
-    const eintraege = {}, warte = { aufgegeben: false };
+    const eintraege = {}, warte = { aufgegeben: false }, vorbereitet = lokalerPool(v, index, ort);
     for (const pfad of new Set(e.pfade)) {
       let n; try { n = v.lies(pfad); } catch { continue; }
       if (!inInbox(v, n.pfad)) continue;
-      const gefunden = lokaleVorschlaege(v, n, index, await erwaehnungenFuer(v, n, warte), ort);
+      const gefunden = lokaleVorschlaege(v, n, index, await erwaehnungenFuer(v, n, warte), ort, vorbereitet);
       for (const [id, o] of speicher.get(kennung) || []) if (o.quelle === "lokal" && o.pfad === n.pfad && !o.angewendet) speicher.get(kennung).delete(id); // der neue Stand ersetzt den alten
       const ablauf = jetzt() + G.ablauf;
       const kHash = sha(JSON.stringify(gefunden.map((x) => [x.art, x.kand ? x.kand.pfad : null, x.ord ? x.ord.pfad : null])));

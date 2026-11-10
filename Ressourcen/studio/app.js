@@ -26,6 +26,7 @@ import { TN } from "./texte-fremd.js"; // „Nichts geht verloren“: Zusammenf�
 import { baueKonfliktAnsicht, baueVergleich } from "./fremd-ansicht.js";
 import { erzeugeJournal, entwurfSchluessel } from "./entwurf.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
+import { erzeugeVirtuelleListe } from "./liste-virtuell.js";
 import { erzeugeMitteilungen } from "./mitteilungen.js"; // P8a: Hinweise unten rechts zu Ereignissen des Aktivitätsprotokolls
 import { erzeugeErwaehnungen } from "./erwaehnungen.js"; // Runde 3d: ungelinkte Erwähnungen in der Info-Spalte
 import { erzeugeNeuigkeiten } from "./neuigkeiten.js";   // Runde 3d: Karte „Was ist neu“ im Posteingang
@@ -64,7 +65,7 @@ const S = {
   typen: [], typMap: new Map(), ansichten: [], ansichtMitglieder: {}, ansichtAusApi: false,
   sicht: { art: "bereich", id: "alle" }, vorVerlauf: null,
   sortierung: "geaendert",
-  sichtListe: [], gerendert: 0,
+  sichtListe: [],
   offen: new Set(), zu: new Set(), favoriten: new Set(),
   pfad: null, hash: null, schutz: false, dirty: false, konflikt: null, speichert: false, nochmal: false, bearbeitbar: true,
   basis: null, fremdOffen: false, entwurfAngebot: null, dienstWeg: false, autoOffen: false, // basis = Text der Datei, auf dem der Editor aufbaut (Grundlage der Zusammenführung)
@@ -1339,15 +1340,8 @@ function baueKarte(n) {
   if (!n.generiert) da.ziehbar(karte, "datei", n.pfad);
   return typ ? setzeTypFarbe(karte, typ) : karte;
 }
-const CHUNK = 40; // klein genug, dass das Nachladen beim Scrollen kein Bild über 25 ms kostet (5.000 Notizen: gemessen in bewegung.spec.mjs)
-function rendereMehr(bis) {
-  const host = $("liste-koerper");
-  const ziel = Math.min(S.sichtListe.length, bis ?? S.gerendert + CHUNK);
-  const frag = document.createDocumentFragment();
-  for (let i = S.gerendert; i < ziel; i++) frag.append(baueKarte(S.sichtListe[i]));
-  host.append(frag);
-  S.gerendert = ziel;
-}
+// Virtuelle Liste (liste-virtuell.js): nur die sichtbaren Karten plus Puffer stehen im DOM, der Rest ist Platzhalter; Höhen werden gemessen (R4-5)
+const virt = erzeugeVirtuelleListe({ host: $("liste-koerper") });
 // Neue Einträge blenden ein, gelöschte klappen zu (P4). Nur beim Neuzeichnen derselben Sicht: ein Wechsel der Sicht zeigt alles ohne Einzelanimation (weicherWechsel).
 // Die alten Karten werden vor dem Neuzeichnen gemerkt (mit Höhe); eine verschwundene bleibt als stille Hülle (ohne data-karte, ohne Rolle) an ihrer Stelle und klappt zu.
 const sichtSchluessel = () => JSON.stringify([S.info?.vault || "", S.sicht, S.zeigeZurueckgestellt, S.sortierung]);
@@ -1357,8 +1351,8 @@ function merkeKarten(host) {
   const alt = [...host.querySelectorAll(":scope > [data-karte]")];
   return alt.length ? alt.map((el) => ({ el, pfad: el.dataset.pfad, hoehe: el.offsetHeight })) : null;
 }
-function listenUebergang(host, alt) {
-  const jetzt = new Set(S.sichtListe.map((n) => n.pfad)), vorher = new Set(alt.map((a) => a.pfad));
+function listenUebergang(host, alt, vorherAlle) {
+  const jetzt = new Set(S.sichtListe.map((n) => n.pfad)), vorher = vorherAlle || new Set(alt.map((a) => a.pfad)); // vorherAlle: die ganze alte Liste, nicht nur der gezeichnete Teil
   const karten = new Map([...host.querySelectorAll(":scope > [data-karte]")].map((el) => [el.dataset.pfad, el]));
   let i = 0;
   for (const [pfad, el] of karten) if (!vorher.has(pfad)) blendeEin(el, Math.min(i++, 6) * 30);
@@ -1368,7 +1362,7 @@ function listenUebergang(host, alt) {
     for (const at of ["data-karte", "data-pfad", "role", "aria-selected", "title", "tabindex"]) a.el.removeAttribute(at);
     a.el.inert = true; huelle.append(a.el);
     const danach = alt.slice(idx + 1).map((x) => karten.get(x.pfad)).find(Boolean);
-    if (danach) host.insertBefore(huelle, danach); else host.append(huelle);
+    if (danach) host.insertBefore(huelle, danach); else if (virt.bisEnde()) host.insertBefore(huelle, virt.untenEl); else return; // ohne gezeichneten Nachbarn: nur am Listenende sichtbar, sonst ohne Einzelanimation
     klappeZu(huelle, a.hoehe);
   });
 }
@@ -1382,12 +1376,13 @@ function zeichneListe({ behalte = false } = {}) {
   pkKi.laden(); // KI-Status früh holen: die Leiste im Posteingang ist dann sofort da oder nie, ohne die Liste zu verschieben
   if (S.sicht.art === "verlauf") { listeSchluessel = null; zeichneVerlauf(); return; }
   verlaufInst?.zerstoere?.(); verlaufInst = null;
+  const vorherAlle = listeSchluessel === sichtSchluessel() && S.sichtListe.length ? new Set(S.sichtListe.map((n) => n.pfad)) : null;
+  virt.stopp();
   if (S.suche.aktiv) { listeSchluessel = null; zeichneSuchergebnisse(); return; }
   if (S.sicht.art === "bereich" && S.sicht.id === "rueckfragen") { listeSchluessel = null; zeichneRueckfragenKarte(); return; }
   if (S.sicht.art === "bereich" && S.sicht.id === "papierkorb") { listeSchluessel = null; S.sichtListe = []; da.zeichnePapierkorb(host); return; }
   if (istAufgabenSicht()) { listeSchluessel = null; S.sichtListe = []; zeichneAufgaben(); return; }
   S.sichtListe = sortiere(sichtNotizen());
-  S.gerendert = 0;
   const alt = merkeKarten(host);
   listeSchluessel = sichtSchluessel();
   host.replaceChildren();
@@ -1395,30 +1390,25 @@ function zeichneListe({ behalte = false } = {}) {
   if (leiste) host.append(leiste);
   if (S.sicht.art === "bereich" && S.sicht.id === "inbox") { host.append(neuKarte.knoten); neuKarte.lade(); host.append(pkKi.leiste); pkKi.laden(); } // „Was ist neu“ ganz oben im Posteingang, darunter die Leiste „Für alle“
   if (!S.sichtListe.length) { pkKi.aktualisiere(); host.append(S.zeigeZurueckgestellt ? h("div", { klasse: "leer-liste", "data-leer": "zurueckgestellt" }, h("p", { text: T.posteingang.leerZurueckgestellt })) : leerZustand()); return; }
-  const bisAuswahl = S.pfad ? S.sichtListe.findIndex((n) => n.pfad === S.pfad) : -1;
-  rendereMehr(Math.max(CHUNK, scroll ? Math.ceil((scroll + host.clientHeight) / 90) + 20 : 0, bisAuswahl >= 0 ? bisAuswahl + 5 : 0));
-  host.scrollTop = scroll;
-  if (alt) listenUebergang(host, alt);
+  virt.setze({ anzahl: S.sichtListe.length, schluessel: (i) => S.sichtListe[i].pfad, baue: (i) => baueKarte(S.sichtListe[i]), scroll });
+  if (alt) listenUebergang(host, alt, vorherAlle);
   if (S.sicht.art === "bereich" && S.sicht.id === "inbox") pkKi.aktualisiere();
 }
-$("liste-koerper").addEventListener("scroll", (e) => {
-  const el = e.currentTarget;
-  if (S.gerendert < S.sichtListe.length && el.scrollTop + el.clientHeight > el.scrollHeight - 700 && !S.suche.aktiv && S.sicht.art !== "verlauf") rendereMehr();
-}, { passive: true });
 function markiereAuswahl() {
   const host = $("liste-koerper");
   let gefunden = null;
   host.querySelectorAll("[data-karte]").forEach((k) => { const an = k.dataset.pfad === S.pfad; k.setAttribute("aria-selected", String(an)); if (an) gefunden = k; });
-  if (!gefunden && S.pfad && !S.suche.aktiv && S.sicht.art !== "verlauf") {
+  if (!gefunden && S.pfad && !S.suche.aktiv && S.sicht.art !== "verlauf" && virt.aktiv()) {
     const i = S.sichtListe.findIndex((n) => n.pfad === S.pfad);
-    if (i >= S.gerendert) { rendereMehr(i + 10); gefunden = host.querySelector(`[data-karte][data-pfad="${CSS.escape(S.pfad)}"]`); if (gefunden) gefunden.setAttribute("aria-selected", "true"); }
+    if (i >= 0) { gefunden = virt.zeige(i); gefunden?.setAttribute("aria-selected", "true"); return; }
   }
   gefunden?.scrollIntoView({ block: "nearest" });
 }
-let listenTimer = null;
+let listenTimer = null, listenZiel = null; // listenZiel: die gewählte, noch nicht geöffnete Karte (Pfeiltasten schneller als die Entprellung: sonst rechnet jeder Tastendruck vom alten Stand)
 function oeffneAusListe(pfad) {
   clearTimeout(listenTimer);
-  listenTimer = setTimeout(() => oeffne(pfad, { ausListe: true }), 40);
+  listenZiel = pfad;
+  listenTimer = setTimeout(() => { listenZiel = null; oeffne(pfad, { ausListe: true }); }, 40);
   host_fokus();
 }
 const host_fokus = () => { if (!S.suche.aktiv) $("liste-koerper").focus({ preventScroll: true }); };
@@ -1430,11 +1420,11 @@ $("liste-koerper").addEventListener("keydown", (e) => {
   if (!liste.length) return;
   e.preventDefault();
   if (e.key === "Enter") { if (S.pfad) ed.fokus(); return; }
-  let i = liste.findIndex((n) => n.pfad === S.pfad);
+  let i = liste.findIndex((n) => n.pfad === (listenZiel || S.pfad));
   i = e.key === "Home" ? 0 : e.key === "End" ? liste.length - 1 : e.key === "ArrowDown" ? Math.min(liste.length - 1, i + 1) : Math.max(0, i < 0 ? 0 : i - 1);
-  if (i >= S.gerendert && !S.suche.aktiv) rendereMehr(i + 20);
   const p = liste[i].pfad;
   oeffneAusListe(p);
+  if (!S.suche.aktiv && virt.aktiv()) virt.zeige(i);
   const k = $("liste-koerper").querySelector(`[data-karte][data-pfad="${CSS.escape(p)}"]`);
   $("liste-koerper").querySelectorAll("[data-karte]").forEach((x) => x.setAttribute("aria-selected", String(x === k)));
   k?.scrollIntoView({ block: "nearest" });
@@ -3377,7 +3367,7 @@ function zuruecksetzen() {
   schreiben.zuruecksetzen(); // Zurück/Vor gehört zum alten Vault
   S.notizen = []; S.nMap = new Map(); S.baum = []; S.eintraege = new Map(); S.git = null; S.gesundheit = null; S.rueckfragen = null; S.syncFehler = null; S.ki = null;
   S.suche = { aktiv: false, treffer: [], auswahl: 0, frage: "" }; S.vorVerlauf = null;
-  S.sichtListe = []; S.gerendert = 0;
+  S.sichtListe = []; virt.stopp();
   ed.setzeText("", { nurLesen: false });
   schliesseDialoge(); // offene Dialoge (Vertrauen, Sichern, Neue Notiz …) gehören zum alten Vault; für den neuen fragt ladeAlles selbst
   neuKarte.vergiss(); // eine KI-Zusammenfassung gehört zum alten Vault

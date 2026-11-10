@@ -66,6 +66,15 @@ const shellText = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `
 // `claude` im PATH und an den üblichen Orten suchen (Logik und Test-Schalter BRAIN_CLAUDE_EXTRA/BRAIN_TESTMODUS: gemeinsam/ki.mjs).
 export const findeClaude = (env = process.env) => findeProgramm("claude", env);
 
+// Listen-Antwort für die Oberfläche (?kompakt=1, R4-5): ohne `links` (die Oberfläche löst Verweise über den Baum und die Notiz selbst auf) und mit gekürzter Vorschau;
+// bei 5.000 Notizen sind das gut halb so viele Bytes. Ohne den Schalter bleibt die Antwort unverändert (Vertrag für andere Aufrufer).
+export const VORSCHAU_KOMPAKT = 160;
+export function kompakt(r) {
+  if (!r || !Array.isArray(r.notizen)) return r;
+  const kurz = (s) => { if (typeof s !== "string" || s.length <= VORSCHAU_KOMPAKT) return s; const c = s.charCodeAt(VORSCHAU_KOMPAKT - 1); return s.slice(0, c >= 0xd800 && c < 0xdc00 ? VORSCHAU_KOMPAKT - 1 : VORSCHAU_KOMPAKT); };
+  return { ...r, notizen: r.notizen.map(({ links, vorschau, ...rest }) => ({ ...rest, vorschau: kurz(vorschau) })) };
+}
+
 function statisch(pfad, studioDir) {
   const nicht = fehler(404, "nicht gefunden");
   let dekodiert;
@@ -418,13 +427,13 @@ export function erzeugeHandler(o) {
       case "/api/gesundheit": nur("GET"); return V().gesundheit();
       case "/api/rueckfragen": nur("GET"); return V().rueckfragen();
       case "/api/nutzung": nur("GET"); return V().nutzung();
-      case "/api/notizen": nur("GET"); return V().notizen();
+      case "/api/notizen": nur("GET"); return q.get("kompakt") === "1" ? kompakt(await V().notizen()) : V().notizen();
       case "/api/notiz/kontext": nur("GET"); return V().notizKontext(q.get("pfad"));
       case "/api/typen": nur("GET"); return V().typen();
       case "/api/ansichten": nur("GET"); return V().ansichten();
       // Notizen + Typen + Ansichten aus EINEM Lauf (Oberfläche: ein Abruf statt drei) und Teil-Index nach Live-Ereignissen (nur die genannten, bereits bekannten Dateien)
-      case "/api/index": nur("GET"); return V().indexAlles();
-      case "/api/teilindex": nur("POST"); return V().teilIndex(eingabe().pfade);
+      case "/api/index": nur("GET"); return q.get("kompakt") === "1" ? kompakt(await V().indexAlles()) : V().indexAlles();
+      case "/api/teilindex": { nur("POST"); const e = eingabe(); return e.kompakt === true ? kompakt(await V().teilIndex(e.pfade)) : V().teilIndex(e.pfade); }
       case "/api/probe": {
         nur("POST");
         const e = eingabe();
