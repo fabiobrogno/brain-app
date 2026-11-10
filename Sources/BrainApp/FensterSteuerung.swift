@@ -163,6 +163,20 @@ final class Navigation: NSObject, WKNavigationDelegate {
     }
 }
 
+extension Navigation: WKUIDelegate {
+    /// `<input type="file">` der Oberfläche (z. B. „Bild oder Datei“ im Schrägstrich-Menü des Editors): Dateiwahl des Systems als Sheet am Fenster.
+    /// Ohne diese Methode tut ein Dateifeld in der WebView nichts. Die Dateien liest die Seite selbst als `File`; hier wird nur gewählt.
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void) {
+        guard let fenster = webView.window else { completionHandler(nil); return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.prompt = "Wählen"
+        panel.beginSheetModal(for: fenster) { code in completionHandler(code == .OK ? panel.urls : nil) }
+    }
+}
+
 /// Die WebView als `WebLader` für die Behandlung eines Absturzes (im Test eine Attrappe).
 @MainActor
 private final class WebLaderWK: WebLader {
@@ -294,6 +308,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         navigation.beiGeladen = { [weak self] in self?.warteAufBereit() }
         navigation.beiFehler = { [weak self] grund in self?.log.schreibe("fenster-ladefehler \(self?.name ?? "") \(grund)") }
         web.navigationDelegate = navigation
+        web.uiDelegate = navigation
         // Stürzt der WebContent-Prozess ab, lädt die App die Oberfläche neu (höchstens 3-mal in 60 s); das Studio bietet danach den Entwurf aus dem Journal an
         let lader = WebLaderWK()
         lader.web = web
@@ -721,6 +736,7 @@ final class FensterSteuerung: NSObject, NSWindowDelegate {
         if let web = webView {
             web.stopLoading()
             web.navigationDelegate = nil
+            web.uiDelegate = nil
             web.configuration.userContentController.removeAllScriptMessageHandlers()
             web.removeFromSuperview()
         }

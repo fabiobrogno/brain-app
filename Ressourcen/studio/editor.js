@@ -10,6 +10,7 @@ import { tabellenErweiterung, fuegeTabelleEin, zelleUmschalten } from "./tabelle
 import * as FM from "./formatieren.js";
 import { formatLeiste } from "./format-leiste.js";
 import { langeAbsaetze } from "./editor-lange-absaetze.js"; // R4-5: Riesen-Absätze ohne quadratisches Link-Parsen
+import { schraegstrichMenue } from "./schraegstrich.js"; // „/“ öffnet das Einfüge-Menü an der Schreibmarke
 
 const { EditorState, EditorSelection, EditorView, Decoration, ViewPlugin, WidgetType, StateField, StateEffect, GutterMarker, MapMode, gutter, keymap } = CM;
 
@@ -621,6 +622,7 @@ export function erstelleEditor(eltern, ctx) {
     ...tabellenErweiterung(ctx, { neuZeichnen, fokusGeaendert }),
     FM.einfuegenErweiterung(ctx),
     formatLeiste(ctx),
+    schraegstrichMenue({ ...ctx, kopfBereich: kopfBereich }),
     vorschauPlugin(ctx),
     ...(ctx.anhaenge ? anhangErweiterung(ctx.anhaenge, ctx) : []),
     CM.autocompletion({ override: [wikiQuelle(ctx), ...(ctx.tagVorschlaege ? [tagQuelle(ctx)] : [])], icons: false, tooltipClass: () => "cm-wikiliste" }),
