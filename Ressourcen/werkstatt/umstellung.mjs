@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { HttpFehler, kindUmgebung } from "../gemeinsam/basis.mjs";
 import { starte, neueFrist } from "../gemeinsam/prozess.mjs";
+import { starterAufruf } from "../gemeinsam/plattform.mjs";
 import { erkenneProfile } from "./profile.mjs";
 
 const FRIST_LESEN = 60_000;
@@ -70,8 +71,9 @@ export function erzeugeUmstellung({ starter, support = null, vertrauen = null })
     if (!existsSync(starter)) throw new HttpFehler(409, "Der Starter von Kortex fehlt noch. Starte Kortex einmal neu, dann wird er angelegt — danach geht es hier weiter.", { art: "kein-starter" });
     const profile = erkenneProfile();
     const args = ["umstellung", befehl, "--vault", v.wurzel, ...(json ? ["--json"] : []), ...extra, ...profile.flatMap((p) => ["--claude-home", p.pfad])];
-    const r = await starte(starter, args, {
-      cwd: homedir(), env: env(), timeout: frist, frist: neueFrist(frist), fehlt: "Der Starter von Kortex wurde nicht gefunden.",
+    const a = starterAufruf(starter, args);
+    const r = await starte(a.programm, a.args, {
+      cwd: homedir(), env: { ...env(), ...a.env }, timeout: frist, frist: neueFrist(frist), fehlt: "Der Starter von Kortex wurde nicht gefunden.",
       zuLange: "Das hat zu lange gedauert und wurde abgebrochen. Was schon geändert war, lässt sich rückgängig machen.",
     });
     let j = null;

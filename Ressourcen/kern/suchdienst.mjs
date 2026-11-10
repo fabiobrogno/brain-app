@@ -8,20 +8,23 @@ import { readFileSync, writeFileSync, unlinkSync, chmodSync, statSync, appendFil
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { vaultPfadOderEnde } from "./pfade.mjs";
+import { dienstSocket } from "./dienst-client.mjs";
 
 const vault = vaultPfadOderEnde(process.argv, { still: true, kontoPruefen: false }); // Hilfsprozess, liefert nichts an eine KI
-const logs = join(vault, ".logs"), sock = join(logs, "suchdienst.sock"), pidDatei = join(logs, "suchdienst.pid");
+const WIN = process.platform === "win32"; // Windows: Named Pipe statt Datei-Socket (dienst-client.mjs#dienstSocket): nichts zu löschen, zu prüfen, zu schützen
+const logs = join(vault, ".logs"), sock = dienstSocket(vault), pidDatei = join(logs, "suchdienst.pid");
 const log = (s) => { try { appendFileSync(join(logs, "hooks.log"), `${new Date().toISOString().slice(0, 19)} suchdienst ${s}\n`); } catch {} };
-if (Buffer.byteLength(sock) > 100) { log("fehler=SOCKPFAD"); process.exit(0); }   // macOS-Grenze für Unix-Sockets ~104 Bytes
+if (!WIN && Buffer.byteLength(sock) > 100) { log("fehler=SOCKPFAD"); process.exit(0); }   // macOS-Grenze für Unix-Sockets ~104 Bytes
 mkdirSync(logs, { recursive: true });
 
 const probe = () => new Promise((ja) => { const c = net.createConnection(sock); c.on("connect", () => { c.destroy(); ja(true); }); c.on("error", () => ja(false)); });
 const lauschen = (server) => new Promise((ja, nein) => { server.once("error", nein); server.listen(sock, () => { server.off("error", nein); ja(); }); });
 
 let meinIno = null, ende = false, bereit = false;
+const inoVon = () => (WIN ? 0 : statSync(sock).ino); // Windows: die Pipe gehört dem, der sie geöffnet hat (zweites listen scheitert mit EADDRINUSE)
 const aufraeumen = (grund) => {
   if (ende) return; ende = true;
-  try { if (statSync(sock).ino === meinIno) unlinkSync(sock); } catch {}
+  try { if (!WIN && inoVon() === meinIno) unlinkSync(sock); } catch {}
   try { if (readFileSync(pidDatei, "utf8").trim() === String(process.pid)) rmSync(pidDatei, { force: true }); } catch {}
   log(`ende grund=${grund}`); process.exit(0);   // kein dispose: llama.cpp-Teardown hängt/stürzt gelegentlich
 };
@@ -35,7 +38,7 @@ const wikiMap = () => { const f = join(logs, "wiki-map.json"), m = statSync(f).m
 
 async function beantworte(zeile) {
   if (!bereit) return { ok: false, code: "EWARM" };   // Aufwärmen läuft: sofort antworten statt den Hook in den Timeout zu schicken
-  try { if (statSync(sock).ino !== meinIno) { setImmediate(() => aufraeumen("socket-ersetzt")); return { ok: false, code: "EERSETZT" }; } }
+  try { if (inoVon() !== meinIno) { setImmediate(() => aufraeumen("socket-ersetzt")); return { ok: false, code: "EERSETZT" }; } }
   catch { setImmediate(() => aufraeumen("socket-weg")); return { ok: false, code: "EERSETZT" }; }
   const { query, limit = 20, top = 3 } = JSON.parse(zeile);
   const { sucheMitRerank } = await import("./such-kern.mjs");
@@ -67,10 +70,10 @@ const server = net.createServer((c) => {
 try { await lauschen(server); }
 catch (e) {
   if (e.code !== "EADDRINUSE" || await probe()) process.exit(0);
-  try { unlinkSync(sock); await lauschen(server); } catch { process.exit(0); }
+  try { if (WIN) process.exit(0); unlinkSync(sock); await lauschen(server); } catch { process.exit(0); } // Windows: belegt und tot gibt es bei einer Pipe nicht
 }
-chmodSync(sock, 0o600);
-meinIno = statSync(sock).ino;
+if (!WIN) chmodSync(sock, 0o600);
+meinIno = inoVon();
 writeFileSync(pidDatei, String(process.pid));
 process.on("SIGTERM", () => aufraeumen("sigterm"));
 process.on("SIGINT", () => aufraeumen("sigint"));
@@ -84,7 +87,7 @@ catch (e) { log(`start pid=${process.pid} aufwaermen-vektor-fehler=${e.code || e
 try { await lib.rerank("aufwärmen", [{ file: "w", text: "aufwärmen" }]); log(`start pid=${process.pid} warm`); }
 catch (e) { log(`start pid=${process.pid} aufwaermen-fehler=${e.code || e.name}`); }
 // Zwei gleichzeitige Starts auf einer Leiche: wer den Socket nicht (mehr) besitzt, geht
-try { if (statSync(sock).ino !== meinIno) aufraeumen("socket-verloren"); } catch { aufraeumen("socket-weg"); }
+try { if (inoVon() !== meinIno) aufraeumen("socket-verloren"); } catch { aufraeumen("socket-weg"); }
 writeFileSync(pidDatei, String(process.pid));
 bereit = true;
 try { rmSync(join(logs, "dienst-timeouts"), { force: true }); } catch {}   // Timeouts des Vorgängers zählen nicht für diesen Dienst

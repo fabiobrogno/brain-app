@@ -237,7 +237,7 @@ const vault = vertrauterVaultOderEnde(vaultPfadOderEnde(args[0] && !args[0].star
 const BEFEHLE_ERLAUBT = KONTO === null || darfMindestens(kontoStufe(vault, { support: supportOrdner(), arg: KONTO, env: {} }), "lesen");
 // Ohne stabilen Kern-Pfad (KORTEX_KERN_PFAD) trägt der Installer nichts ein: Hooks würden beim nächsten App-Update ins Leere zeigen. Dazu gehört der Starter der App.
 const KERN_STABIL = kernStabilOderEnde();
-const STARTER = process.platform === "win32" ? null : starterOderEnde();
+const STARTER = starterOderEnde(); // Windows: bin/kortex.cmd (Stapeldatei, von der App geschrieben)
 const commandsZiel = join(home, "commands");
 const datei = join(home, "settings.json");
 
@@ -258,10 +258,9 @@ const pfad = (f) => shellQuote(`${KERN_FWD}/adapters/claude-code/${f}`);
 // §12.1 Nr. 1 (B3): kein fester Node-Pfad in den Hooks — auf macOS/Linux sucht node-start.sh Node bei jedem Start (ein
 // Node-Update bricht so keine Hooks; es findet auch das private Node im Support-Ordner der App bzw. unter ~/.brain-kit/node, das Claude Code oft nicht
 // im PATH der Hooks hat). Windows behält den erkannten Pfad (kein /bin/sh).
-const NODE = shellQuote(process.execPath); // nur Windows (kein /bin/sh, kein Starter): Node mit dem Kern-Pfad direkt
-// macOS/Linux: der Starter-Befehl mit Stille bei fehlendem Starter (pfade.mjs#hookBefehl).
+// Alle Systeme: der Starter-Befehl mit Stille bei fehlendem Starter (pfade.mjs#hookBefehl; Windows: kortex.cmd über Git Bash).
 const KONTO_ARG = KONTO ? ` --konto ${KONTO}` : ""; // die Kennung ist hier schon auf k_ + 8 Hex geprüft: nichts, was die Shell auswerten würde
-const hookCmd = (datei, args = "") => (process.platform === "win32" ? `${NODE} ${pfad(datei)}${args}${KONTO_ARG}` : hookBefehl(STARTER, datei.replace(/\.mjs$/, ""), `${args}${KONTO_ARG}`));
+const hookCmd = (datei, args = "") => hookBefehl(STARTER, datei.replace(/\.mjs$/, ""), `${args}${KONTO_ARG}`);
 // Ein Eintrag je Brain-Hook. PreToolUse hat DREI eigene Einträge (wiki-guard, werkzeug-protokoll, regeln-lesen), damit
 // der wiki-guard-Matcher unverändert bleibt; PreCompact sichert den Arbeitsstand (kompakt-sichern, M2a) UND startet die
 // Ernte; SessionEnd startet die Ernte UND trägt die Sitzung aus .logs/laufend/ aus (sitzung-ende, M2a).

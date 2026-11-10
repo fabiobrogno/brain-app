@@ -3,16 +3,22 @@
 import net from "node:net";
 import { spawn, execFileSync } from "node:child_process";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { statSync, writeFileSync, readFileSync, mkdirSync, rmSync } from "node:fs";
 
-const pfade = (vault) => { const l = join(vault, ".logs"); return { l, sock: join(l, "suchdienst.sock"), pid: join(l, "suchdienst.pid"), haengt: join(l, "dienst-haengt"), start: join(l, "dienst-start") }; };
+// Adresse des Suchdienst-Sockets. macOS/Linux: Unix-Socket <Vault>/.logs/suchdienst.sock. Windows: Named Pipe \\.\pipe\kortex-suchdienst-<Hash des Vault-Pfads> (Unix-Sockets in Temp-Ordnern
+// scheitern dort mit EACCES; eine Pipe verschwindet mit ihrem Prozess, es gibt keine Leiche und keine Pfadlängen-Grenze).
+export const dienstSocket = (vault, plattform = process.platform) => (plattform === "win32"
+  ? `\\\\.\\pipe\\kortex-suchdienst-${createHash("sha256").update(join(vault).toLowerCase()).digest("hex").slice(0, 24)}`
+  : join(vault, ".logs", "suchdienst.sock"));
+const pfade = (vault) => { const l = join(vault, ".logs"); return { l, sock: dienstSocket(vault), pid: join(l, "suchdienst.pid"), haengt: join(l, "dienst-haengt"), start: join(l, "dienst-start") }; };
 const fehler = (code) => Object.assign(new Error("Suchdienst"), { code });
 const juengerAls = (f, ms) => { try { return Date.now() - statSync(f).mtimeMs < ms; } catch { return false; } };
 
 export function frageDienst(vault, payload, { connectMs = 150, antwortMs = 2500 } = {}) {
   const { sock } = pfade(vault);
-  if (Buffer.byteLength(sock) > 100) return Promise.reject(fehler("ESOCKPFAD"));
+  if (process.platform !== "win32" && Buffer.byteLength(sock) > 100) return Promise.reject(fehler("ESOCKPFAD"));
   return new Promise((ja, nein) => {
     let raus = "", fertig = false;
     const stop = (f, wert) => { if (fertig) return; fertig = true; clearTimeout(tc); clearTimeout(ta); c.destroy(); f(wert); };

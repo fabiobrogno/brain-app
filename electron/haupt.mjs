@@ -22,8 +22,8 @@ import { erzeugeUpdater, konfiguriere, updatesMoeglich } from "./updater.mjs";
 import { SCHEMA, HOST, START_URL, istEigeneAdresse, externPruefen } from "./navigation.mjs";
 import { erzeugeGlobaleKuerzel, anzeigeText, acceleratorVon } from "./kuerzel.mjs";
 import { baueMenueVorlage } from "./menue.mjs";
-import { baueTrayVorlage, trayZustand, trayTitel } from "./tray.mjs";
-import { leseEinstellungen as leseMitteilungsEinstellungen, erzeugePlaner, erzeugeLeser, probeMitteilung } from "./mitteilungen.mjs";
+import { baueTrayVorlage, trayZustand, trayTitel, linuxTraySichtbar } from "./tray.mjs";
+import { leseEinstellungen as leseMitteilungsEinstellungen, erzeugePlaner, erzeugeLeser, probeMitteilung, systemMitteilung } from "./mitteilungen.mjs";
 import { erzeugeErfassenFenster, antwortErfassen, ERFASSEN_HOST } from "./erfassen-fenster.mjs";
 import { hinweisFuerVault, pruefeEingabe, baueAnfrage, antwortAus, leseArt, merkeArt } from "./erfassen.mjs";
 import { leseAppSymbol, symbolPfade } from "./symbole.mjs";
@@ -53,7 +53,8 @@ const ENTWICKLER = !app.isPackaged;
 // Testlauf (BRAIN_TESTMODUS) und Vorschau: wie in der Mac-App meldet die Hülle dann kein globales Kürzel an (es gehört der echten App); die Tests schalten es mit KORTEX_TEST_GLOBALE_KUERZEL=1 ausdrücklich ein
 const TESTMODUS = process.env.BRAIN_TESTMODUS === "1";
 const GLOBALE_KUERZEL = !process.env.KORTEX_VORSCHAU && (!TESTMODUS || process.env.KORTEX_TEST_GLOBALE_KUERZEL === "1");
-// Schließen des Hauptfensters: unter Windows läuft Kortex im Infobereich weiter (Tray, globales Kürzel, Mitteilungen), sonst beendet es die App (Linux: ob ein Tray sichtbar ist, weiß die App nicht)
+// Schließen des Hauptfensters: unter Windows läuft Kortex im Infobereich weiter (Tray, globales Kürzel, Mitteilungen). Linux: nur, wenn ein Infobereich das Symbol wirklich zeigt (StatusNotifierWatcher am
+// Sitzungsbus, tray.mjs#linuxTraySichtbar, beim Start gefragt) — sonst beendet Schließen die App, damit sie nicht unsichtbar weiterläuft. KORTEX_SCHLIESSEN_IN_TRAY=1 erzwingt, =0 verbietet das Bleiben.
 const IN_TRAY_SCHLIESSEN = process.env.KORTEX_SCHLIESSEN_IN_TRAY === "1" || (process.platform === "win32" && process.env.KORTEX_SCHLIESSEN_IN_TRAY !== "0");
 const JSON_KOPF = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
 const SCHREIBEND = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -233,14 +234,14 @@ function kuerzelAnwenden() { const h = kuerzel.wendeAn(belegung()); kuerzelHinwe
 function kuerzelNeuLesen() { protokoll("aktion kuerzel-geaendert"); kuerzelAnwenden(); }
 
 // ── Tray (Windows Infobereich, Linux AppIndicator): Menü wie die Menüleiste der Mac-App; ohne Tray-Unterstützung läuft die App ohne
-let tray = null, trayDaten = { info: null, aktivitaet: null, rueckfragen: null }, trayVorlage = [], trayTooltip = "", trayAuffrischer = null, rueckfragenStand = 0;
+let tray = null, trayDaten = { info: null, aktivitaet: null, rueckfragen: null, aufgaben: null }, trayVorlage = [], trayTooltip = "", trayAuffrischer = null, rueckfragenStand = 0;
 async function aktualisiereTray() {
   if (!tray) return;
   const [info, aktivitaet] = await Promise.all([leseJson("/api/info"), leseJson("/api/aktivitaet", "nur=ungelesen&limit=1")]);
   trayDaten = { ...trayDaten, info, aktivitaet };
   zeichneTray();
   // Rückfragen kennt die Werkstatt nur mit Kit und liest sie in einem eigenen Prozess (gebündelt, höchstens alle 2 min): nie auf sie warten
-  if (info?.vault && Date.now() - rueckfragenStand > 120_000) { rueckfragenStand = Date.now(); leseJson("/api/rueckfragen").then((r) => { trayDaten = { ...trayDaten, rueckfragen: r }; zeichneTray(); }); }
+  if (info?.vault && Date.now() - rueckfragenStand > 120_000) { rueckfragenStand = Date.now(); leseJson("/api/rueckfragen").then((r) => { trayDaten = { ...trayDaten, rueckfragen: r }; zeichneTray(); }); leseJson("/api/aufgaben").then((r) => { trayDaten = { ...trayDaten, aufgaben: r }; zeichneTray(); }); }
 }
 function zeichneTray() {
   if (!tray) return;
@@ -261,19 +262,22 @@ function starteTray() {
     if (process.platform === "win32") tray.on("click", () => zeigeStudio()); // Linux (AppIndicator) kennt keinen Klick, dort gibt es nur das Menü
     zeichneTray();
     aktualisiereTray();
+    if (process.platform === "linux") linuxTraySichtbar().then((ja) => { linuxTrayDa = ja; protokoll(`tray linux sichtbar=${ja}`); });
     setInterval(() => aktualisiereTray(), 60_000).unref();
   } catch (e) { tray = null; protokoll(`tray aus: ${e?.message || e}`); } // z. B. Linux ohne Tray-Unterstützung: die App läuft sauber ohne
 }
-const bleibtImTray = () => !beendet && !!tray && IN_TRAY_SCHLIESSEN;
+let linuxTrayDa = false; // nur Linux: zeigt ein Infobereich das Symbol? (wird nach dem Anlegen des Trays gesetzt)
+const bleibtImTray = () => !beendet && !!tray && (IN_TRAY_SCHLIESSEN || (process.platform === "linux" && linuxTrayDa && process.env.KORTEX_SCHLIESSEN_IN_TRAY !== "0"));
 
 // ── Mitteilungen des Systems aus dem Aktivitätsprotokoll (Takt 2 s wie MitteilungsDienst in Swift); Klick bringt das Studio nach vorn und öffnet das Ziel
 const gehalten = new Set(); // gezeigte Mitteilungen, bis sie geschlossen oder angeklickt sind
 const MELDUNGEN = []; // Testlauf: die gezeigten Mitteilungen (Objekt, Text, Ziel), zum Prüfen; sonst leer
 function zeigeMitteilung(m) {
-  const n = new Notification({ title: m.titel, ...(m.untertitel ? { subtitle: m.untertitel } : {}), body: m.text, silent: !m.ton });
+  const sys = systemMitteilung(m);
+  const n = new Notification({ ...sys, silent: !m.ton });
   gehalten.add(n); n.on("close", () => gehalten.delete(n)); // Electron räumt sonst das Objekt samt Klick-Handler weg
   n.on("click", () => { gehalten.delete(n); mitStudio(() => befehlAnStudio(m.ziel)).catch(() => {}); });
-  if (TESTMODUS) { MELDUNGEN.push({ titel: m.titel, untertitel: m.untertitel, text: m.text, ziel: m.ziel, art: m.art ?? null, objekt: n }); if (MELDUNGEN.length > 50) MELDUNGEN.shift(); }
+  if (TESTMODUS) { MELDUNGEN.push({ titel: m.titel, untertitel: m.untertitel, text: m.text, anzeige: sys.body, ziel: m.ziel, art: m.art ?? null, objekt: n }); if (MELDUNGEN.length > 50) MELDUNGEN.shift(); }
   else n.show();
 }
 function zeigeProbeMitteilung() {

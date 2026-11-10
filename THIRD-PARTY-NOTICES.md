@@ -10,7 +10,7 @@ vorab gebautes Bündel (siehe CodeMirror).
 | Bestandteil | Version | Lizenz | Ort im Paket |
 |---|---|---|---|
 | Node.js (gebündelte Laufzeit) | v24.22.0 | MIT (mit eigenen Lizenzen der enthaltenen Bibliotheken) | `node-runtime/bin/node`, `node-runtime/LICENSE` |
-| Electron (Hülle der Pakete für Windows und Linux) | 45.0.0 | MIT (Chromium und enthaltene Bibliotheken: eigene Lizenzen) | `LICENSE.electron.txt`, `LICENSES.chromium.html` neben dem Programm |
+| Electron (Hülle der Pakete für Windows und Linux) | 45.1.0 | MIT (Chromium und enthaltene Bibliotheken: eigene Lizenzen) | `LICENSE.electron.txt`, `LICENSES.chromium.html` neben dem Programm |
 | electron-updater (Updates der Pakete für Windows und Linux) | 6.8.11 | MIT (Abhängigkeiten: MIT, ISC, BlueOak-1.0.0, Python-2.0) | `resources/app.asar`, Lizenztexte unter `node_modules/<Paket>/` darin |
 | Sparkle (Update-Framework) | 2.10.0 | MIT (mit eigenen Lizenzen einzelner Quelldateien) | `Frameworks/Sparkle.framework` |
 | CodeMirror 6 und Lezer (Editor) | siehe unten | MIT | `studio/vendor/codemirror.bundle.js` |
@@ -542,9 +542,9 @@ Name, Marke und Logo von Orca sind nicht übernommen; Kortex ist mit Orca nicht 
 (https://github.com/refactoringhq/tolaria, AGPL-3.0) sind nur als Prinzipien in `docs/plaene/design-wizards.md` beschrieben, es wurde nichts
 daraus übernommen.
 
-## Electron 45.0.0 und electron-updater 6.8.11 (Pakete für Windows und Linux)
+## Electron 45.1.0 und electron-updater 6.8.11 (Pakete für Windows und Linux)
 
-Die Pakete für Windows und Linux laufen auf Electron (https://www.electronjs.org, Quelltext: Version 45.0.0 auf der Seite des Projekts). Electron liegt unverändert
+Die Pakete für Windows und Linux laufen auf Electron (https://www.electronjs.org, Quelltext: Version 45.1.0 auf der Seite des Projekts). Electron liegt unverändert
 im Paket; die Lizenz von Electron (`LICENSE.electron.txt`) und die Lizenzen von Chromium und seinen Bibliotheken (`LICENSES.chromium.html`) liegen neben dem Programm.
 Für die Updates enthält `resources/app.asar` das Paket `electron-updater` (https://www.electron.build) und seine Abhängigkeiten; deren Lizenztexte liegen im
 `app.asar` unter `node_modules/<Paket>/`.

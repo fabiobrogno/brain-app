@@ -2,7 +2,7 @@
 // Neue Betriebssystem-Befehle im Node-Code gehören hierher, nicht verstreut in andere Dateien. Alles ist über `plattform`/`env`/`home` einspritzbar (Tests).
 // Eine Kopie liegt wortgleich in kern/plattform.mjs (der Kern importiert nichts aus gemeinsam/); Tests/Node/plattform.test.mjs vergleicht beide.
 import { readFileSync, existsSync, realpathSync, openSync, ftruncateSync, writeSync, closeSync } from "node:fs";
-import { join, isAbsolute } from "node:path";
+import { join, isAbsolute, dirname } from "node:path";
 import { homedir, hostname, userInfo, tmpdir } from "node:os";
 import { execFile, execFileSync, spawnSync, spawn } from "node:child_process";
 
@@ -66,6 +66,18 @@ export function nurMac(was, fn, { plattform = process.platform } = {}) {
 export function schreibeAufBestehendes(pfad, text) {
   const fd = openSync(pfad, "r+");
   try { ftruncateSync(fd, 0); writeSync(fd, text, 0); } finally { closeSync(fd); }
+}
+
+// ───────────── Starter der App (<Support>/bin/kortex, Windows kortex.cmd) ─────────────
+export const starterName = (plattform = process.platform) => (istWindows(plattform) ? "kortex.cmd" : "kortex");
+// Wie die Werkstatt den Starter aufruft: macOS/Linux direkt. Windows: Node startet eine .cmd nicht ohne Shell (EINVAL), und eine Shell würde die Argumente (Vault-Pfade) neu auswerten —
+// darum dasselbe wie die Stapeldatei selbst tut: <bin>\node.exe <bin>\kern\brain.mjs <Argumente> mit KORTEX_KERN_PFAD. → { programm, args, env } (env wird ZUSÄTZLICH gesetzt)
+export function starterAufruf(starter, args, { plattform = process.platform } = {}) {
+  if (istWindows(plattform) && /\.cmd$/i.test(starter)) {
+    const bin = dirname(starter);
+    return { programm: join(bin, "node.exe"), args: [join(bin, "kern", "brain.mjs"), ...args], env: { KORTEX_KERN_PFAD: join(bin, "kern") } };
+  }
+  return { programm: starter, args, env: {} };
 }
 
 // ───────────── Prozesse ─────────────
