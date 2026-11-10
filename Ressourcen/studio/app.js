@@ -1408,8 +1408,8 @@ function markiereAuswahl() {
 let listenTimer = null, listenZiel = null; // listenZiel: die gewählte, noch nicht geöffnete Karte (Pfeiltasten schneller als die Entprellung: sonst rechnet jeder Tastendruck vom alten Stand)
 function oeffneAusListe(pfad) {
   clearTimeout(listenTimer);
-  listenZiel = pfad;
-  listenTimer = setTimeout(() => { listenZiel = null; oeffne(pfad, { ausListe: true }); }, 40);
+  listenZiel = { pfad, bis: Date.now() + 1500 }; // bleibt gültig, bis die Notiz offen ist (oeffne ist asynchron), höchstens 1,5 s
+  listenTimer = setTimeout(() => oeffne(pfad, { ausListe: true }), 40);
   host_fokus();
 }
 const host_fokus = () => { if (!S.suche.aktiv) $("liste-koerper").focus({ preventScroll: true }); };
@@ -1421,7 +1421,7 @@ $("liste-koerper").addEventListener("keydown", (e) => {
   if (!liste.length) return;
   e.preventDefault();
   if (e.key === "Enter") { if (S.pfad) ed.fokus(); return; }
-  let i = liste.findIndex((n) => n.pfad === (listenZiel || S.pfad));
+  let i = liste.findIndex((n) => n.pfad === (listenZiel && listenZiel.bis > Date.now() && listenZiel.pfad !== S.pfad ? listenZiel.pfad : S.pfad));
   i = e.key === "Home" ? 0 : e.key === "End" ? liste.length - 1 : e.key === "ArrowDown" ? Math.min(liste.length - 1, i + 1) : Math.max(0, i < 0 ? 0 : i - 1);
   const p = liste[i].pfad;
   oeffneAusListe(p);
