@@ -89,7 +89,7 @@ und in „Frag deinen Vault“ als Bild bzw. als Chip und überstehen Umbenennen
 
 **Entscheidungen bei Konflikten im Kürzel-Register:** ⌘E ist „Kortex einrichten“ → Code liegt auf ⇧⌘C. ⌘K ist die Palette und ⇧⌘K löscht die Zeile (CodeMirror) → Link auf ⌘L. ⌥⌘1/⌥⌘2 sind „Studio öffnen“/„Übersicht öffnen“ → Überschriften auf ⌥⇧⌘1–4. ⌘1–4 sind „Gehe zu“.
 
-**Offen / Übergabe:** Bilder aus der Zwischenablage legt erst die Anhang-Logik aus 3a ab (`ctx.bildEinfuegen`); ein Schrägstrich-Menü gibt es noch nicht (der Befehl „Tabelle einfügen“ steht in der Palette).
+**Offen / Übergabe:** Bilder aus der Zwischenablage legt erst die Anhang-Logik aus 3a ab (`ctx.bildEinfuegen`); das Schrägstrich-Menü (`/` im Editor) gibt es seit PR „feat(editor): Schrägstrich-Menü“ (siehe `docs/ENTWICKLUNG.md`); der Befehl „Tabelle einfügen“ steht weiter in der Palette.
 
 ## 3c: Tags und Export/Teilen
 
