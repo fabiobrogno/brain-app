@@ -170,8 +170,7 @@ export function sicher(argv, env = process.env) {
   return exitVon(lauf(ECHT, ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${HOOKS}`, "-c", "protocol.ext.allow=never",
     "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false", "-c", "push.recurseSubmodules=no",
     "-c", "diff.ignoreSubmodules=all", "-c", "status.submoduleSummary=false", "-c", "safe.bareRepository=explicit",
-    "-c", "commit.gpgSign=false", "-c", "tag.gpgSign=false", "-c", "push.gpgSign=false",
-    "-c", "core.autocrlf=false", ...argv])); // keine Zeilenenden-Umwandlung: Git for Windows hat sonst standardmäßig autocrlf=true, und Wiederherstellen, Verlauf und Diff lieferten Text mit \r
+    "-c", "commit.gpgSign=false", "-c", "tag.gpgSign=false", "-c", "push.gpgSign=false", ...argv]));
 }
 
 const direkt = (() => { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
