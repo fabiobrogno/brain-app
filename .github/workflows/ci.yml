@@ -166,6 +166,12 @@ jobs:
         run: npx playwright test --shard=${{ matrix.shard }}/6 --workers=2 --fully-parallel --reporter=list,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
+      # WebKit ist die Engine der Mac-App: die Sprung-Messung (ruhe.spec.mjs) läuft dort zusätzlich, einmal je Lauf (Shard 1)
+      - name: Ruhe-Messung in WebKit (Shard 1)
+        if: matrix.shard == 1
+        run: |
+          npx playwright install --with-deps webkit
+          npx playwright test -c playwright.webkit.config.mjs
       - name: Bericht und Traces hochladen
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

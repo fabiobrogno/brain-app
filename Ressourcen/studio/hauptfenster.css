@@ -43,9 +43,10 @@
 
 /* ---------- Kopfzeile: Brotkrumen, Suchfeld, Knöpfe ---------- */
 .kopf { grid-area: kopf; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--linie); background: var(--papier); min-width: 0; container: kopf / inline-size; position: relative; z-index: 2; }
-.kopf-links { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 4px; }
+/* Der Titel bleibt stehen: bei Platzmangel schrumpft zuerst das Suchfeld bis 150 px (Gewicht 100 gegen 0,01), erst danach die linke Gruppe bis 260 px */
+.kopf-links { flex: 1 0.01 auto; min-width: 260px; display: flex; align-items: center; gap: 4px; }
 .kopf-rechts { flex: none; display: flex; align-items: center; gap: 2px; min-width: 0; }
-.kopf-suche { flex: 0 1 300px; min-width: 150px; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px 0 10px; border: 1px solid var(--eingabe); background: var(--eingabe-grund); box-shadow: var(--schatten-klein); border-radius: var(--r);
+.kopf-suche { flex: 0 100 300px; min-width: 150px; /* schrumpft zuerst (Gewicht 100), erst danach der Titel */ display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px 0 10px; border: 1px solid var(--eingabe); background: var(--eingabe-grund); box-shadow: var(--schatten-klein); border-radius: var(--r);
   cursor: pointer; text-align: left; color: var(--text-3); font-size: 13px; transition: border-color var(--d-fast), background var(--d-fast); }
 .kopf-suche:hover { border-color: var(--linie-stark); background: var(--hover); }
 .kopf-suche > .sym { color: var(--text-3); flex: none; }
@@ -61,21 +62,20 @@
 .kopf .werkzeuge { margin-right: 4px; padding-right: 6px; border-right: 1px solid var(--linie); }
 .kopf .speicherstand { margin-right: 6px; }
 .kopf .pille { margin-right: 6px; }
-.pfad { display: flex; align-items: center; gap: 2px; flex: 1 1 0; min-width: 0; color: var(--text-2); font-size: 13px; white-space: nowrap; overflow: hidden; }
+.pfad { display: flex; align-items: center; gap: 2px; flex: 1 1 auto; min-width: 0; color: var(--text-2); font-size: 13px; white-space: nowrap; overflow: hidden; }
 .pfad .krume { overflow: hidden; text-overflow: ellipsis; padding: 2px 4px; border-radius: 4px; flex: 0 5 auto; min-width: 0; }
 .pfad .krume.aktuell { color: var(--text); font-weight: 500; flex: 0 1 auto; }
 .pfad .krume.link { cursor: pointer; } .pfad .krume.link:hover { background: var(--hover); color: var(--text); }
 .pfad .sep { color: var(--text-3); opacity: .7; display: grid; flex: none; }
 .au-zurueck { flex: none; }
-/* Schmal (Kopfzeile unter ~960 px): nur die letzte Krume bleibt, der Status der Notiz schrumpft auf den Punkt, der Speicherstand auf ein Häkchen */
+/* Schmal (Kopfzeile unter ~960 px): nur die letzte Krume bleibt, der Status der Notiz schrumpft auf den Punkt */
 @container kopf (max-width: 980px) {
   .pfad .krume.link, .pfad .sep { display: none; }
   .pille { padding: 0 8px; gap: 0; }
   .pille span { display: none; }
-  .speicherstand[data-zustand="gespeichert"] { font-size: 0; width: 14px; height: 14px; background: var(--gruen); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-6.5' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-6.5' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; }
-  .speicherstand[data-zustand="gespeichert"]:empty { display: none; }
 }
 @container kopf (max-width: 820px) {
+  .kopf-links { min-width: 0; }
   .kopf-suche { flex: 0 0 30px; min-width: 30px; padding: 0; justify-content: center; }
   .kopf-suche-text, .kopf-suche-tasten { display: none; }
   .knopf-frag { padding: 0 9px; }
