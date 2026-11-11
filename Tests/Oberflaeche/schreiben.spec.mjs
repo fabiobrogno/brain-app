@@ -251,8 +251,9 @@ test("Zurück/Vor: ⌥⌘← und ⌥⌘→ stellen Cursor und Scrollposition je 
     return { anker: z.anker, kopf: z.kopf, oben: l ? Number(/^Zeile (\d+)/.exec(l.textContent)[1]) : -1 };
   });
   const gleich = (a, b) => a.anker === b.anker && a.kopf === b.kopf && Math.abs(a.oben - b.oben) <= 1;
+  // CodeMirror zeichnet die Zeilen des neuen Ausschnitts erst im nächsten Messdurchgang nach dem Scrollen (unter Last war sonst noch keine „Zeile n“ sichtbar: -1)
+  await expect.poll(async () => (await zustand()).oben).toBeGreaterThan(40);
   const merk = await zustand();
-  expect(merk.oben).toBeGreaterThan(40);
   const nav = (id) => page.locator(`#nav-${id}`);
   await expect(nav("zurueck")).toHaveAttribute("aria-disabled", "true");
   // zweite Notiz öffnen (Palette)
@@ -375,6 +376,26 @@ test("K1: ein Entwurf ohne Titel, dessen erste Zeilen sich nach dem Säubern lee
     await expect.poll(() => inboxDateien().includes(datei), { message: datei }).toBe(true);
     expect(readFileSync(join(vault, "00_inbox", datei), "utf8")).toBe(text);
   }
+});
+
+// Rennen (CI-Wackler im Test oben): Ein Klick in die Liste öffnet die Karte erst nach 40 ms. Kam ⌘N in dieser Zeit, öffnete die Karte danach über der neuen Notiz,
+// und der Text landete in der angeklickten Notiz. Erzwungen: Klick und ⌘N in derselben Aufgabe, also sicher innerhalb der 40 ms.
+test("K1: Klick auf eine Karte und gleich danach ⌘N: die neue Notiz bleibt offen, ihr Text landet nicht in der angeklickten Notiz", async ({ page }) => {
+  await start(page);
+  const ziel = await page.locator("#liste-koerper [data-karte]").first().getAttribute("data-pfad");
+  const vorher = readFileSync(join(vault, ziel), "utf8");
+  await page.evaluate((p) => {
+    document.querySelector(`#liste-koerper [data-karte][data-pfad="${CSS.escape(p)}"]`).click();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "n", code: "KeyN", metaKey: true, bubbles: true, cancelable: true }));
+  }, ziel);
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "Neue Notiz");
+  await page.waitForTimeout(250); // länger als die 40 ms der Liste: käme der Klick noch hinterher, wäre jetzt die Karte offen
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "Neue Notiz");
+  await setzeText(page, "# Rennen Nachzug\n\nText aus dem Rennen.\n");
+  expect((await page.evaluate(() => window.studio.vorSchliessen())).ok).toBe(true);
+  await expect.poll(() => inboxDateien().includes("rennen-nachzug.md")).toBe(true);
+  expect(readFileSync(join(vault, "00_inbox", "rennen-nachzug.md"), "utf8")).toBe("# Rennen Nachzug\n\nText aus dem Rennen.\n");
+  expect(readFileSync(join(vault, ziel), "utf8")).toBe(vorher);
 });
 
 test("K1: derselbe Fall beim Beenden (vorSchliessen): der Text wird gesichert, nicht verworfen", async ({ page }) => {
