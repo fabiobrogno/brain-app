@@ -1,0 +1,12 @@
+/* Tastatur, Fokus und Kontrast (R4-3). Der Fokusring selbst (--fokus, --fokus-ring) steht in studio.css; hier nur, was dazu gehört: Fokus in der Notizliste, ausgeblendete Seitenleiste. */
+
+/* Die Liste ist EIN Fokusziel (aria-selected zeigt die Karte): hat die Liste die Tastatur, trägt die gewählte Karte den Ring (innen, damit nichts abgeschnitten wird) */
+.liste-koerper:focus-visible [data-karte][aria-selected="true"] { box-shadow: inset 0 0 0 2px var(--fokus); }
+.liste-koerper:focus-visible { box-shadow: none; }
+/* Ein Panel, das der Fokus als Ganzes bekommt (F6 ohne Feld darin): Ring innen statt um die ganze Spalte */
+.frage:focus-visible, #info:focus-visible { box-shadow: inset 0 0 0 2px var(--fokus); }
+
+/* Linke Seitenleiste aus (⌃⌘S): 0 px breit, für Maus und Tastatur nicht mehr da; die Breite gleitet wie die rechte Spalte (app.js#glatt) */
+#app[data-seite="aus"] #seite { visibility: hidden; border-right-width: 0; overflow: hidden; transition: visibility 0s linear var(--t); }
+#app[data-seite="aus"] .griff[data-griff="seite"] { display: none; }
+#knopf-seite[aria-pressed="false"] { background: transparent; color: var(--text-2); }
