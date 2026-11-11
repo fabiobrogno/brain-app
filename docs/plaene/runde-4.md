@@ -198,3 +198,40 @@ Abschluss der Runde: Vorschau für den Nutzer neu starten (hell, dunkel, großer
 
 - Offene KI-Kleinigkeiten aus `ki-runde.md` §11–§13 (Übersetzen ins Deutsche aus deutschem Text leer, K4 ohne Nachladen über 25 Stellen, `ki: nein`-Schalter im Studio, Richtung „Diese Notiz erwähnt …“ mit KI): klein, eigene Folge-PR bei Bedarf.
 - Tabs/geteilte Ansicht, Graph-Ansicht, iPhone/iPad, Team-Vault (`vision-team.md`): erst nach v1.
+
+## 8. Stand R4-8 (Windows/Linux-Beta-Rest, Branch `feat/r4-windows-linux`)
+
+**Gebaut und getestet**
+
+| Teil | Stand |
+|---|---|
+| Hook-Starter | `electron/laufzeit.mjs` schreibt bei jedem Start `<Support>/bin/kortex` (Linux, Shell wie `Laufzeit.swift`) bzw. `bin/kortex.cmd` (Windows, Stapeldatei ohne feste Pfade, `%~dp0`). Hook-Befehle zeigen auf ihn (`pfade.mjs#hookBefehl`; Windows über Git Bash: `if [ -f … ]; then … hook <name>; else exit 0; fi`, Exit-Code des Hooks bleibt). Die Werkstatt ruft ihn unter Windows als `node.exe` + `brain.mjs` (`starterAufruf`, nie eine `.cmd` ohne Shell). Test `Tests/Node/starter-hook.test.mjs` startet den Starter wirklich (cmd.exe und sh.exe auf Windows), Paket-Rauchtest ruft `hook` im installierten Paket auf. |
+| `BROWSER` beim Anmelden (Windows) | `kortex-browser.cmd` schreibt die Adresse in die Datei (`anmeldung.mjs`); der Test „umbrochene Adresse“ läuft jetzt auch unter Windows. |
+| Named Pipe | Suchdienst und Client nutzen unter Windows `\\.\pipe\kortex-suchdienst-<Hash>` (`dienst-client.mjs#dienstSocket`); der Gesundheits-Test läuft dort. |
+| Linux-Tray | `tray.mjs#linuxTraySichtbar` fragt den StatusNotifierWatcher (gdbus, dann dbus-send). Schließen bleibt nur dann im Tray, sonst beendet es die App (`KORTEX_SCHLIESSEN_IN_TRAY=1/0` erzwingt/verbietet). |
+| Tray-Zeile | „N Aufgaben offen · M überfällig“ (wie Mac), öffnet das Board. Aktualisierung alle 2 min bzw. bei Statuswechseln. |
+| Mitteilungen | `subtitle` gibt es nur am Mac: unter Windows/Linux steht der Vault-Name vor dem Satz (`systemMitteilung`). |
+| Electron | 45.0.0 → 45.1.0 (vom 27.10., jetzt ≥ 2 Wochen alt; 45.2.x/45.3.0 sind jünger), Lizenzliste angepasst. Fuses und Lizenzliste (Electron, electron-updater) waren schon erledigt (`plattformen-windows-linux.md` §12). |
+| Echte Fehler gefunden | Sperre unter Windows (`abgleich-sperre.mjs`: EPERM bei gerade gelöschter Datei zählte als „kein Tor“ → zwei Prozesse zugleich), Laufwerkswurzel `D:` in Sperrlisten (`beleg-ernte.mjs`, `gedaechtnis.mjs`), PDF-Export unter Windows (erlaubte Adresse), Hook-Liste der Tests mit `:` statt `;`. |
+
+**CI je Plattform (Pflicht = in `ci-ok`)**
+
+- Linux: alles Pflicht (wie bisher).
+- Windows jetzt Pflicht: Node-Tests, Vertrauensschranke, Kern-Unit-Tests, Electron-Hülle, Paket-Rauchtest (außer arm64-Bau).
+- Windows weiter Messung (`continue-on-error`): nur die Oberflächentests (Playwright, 4 Teile). Stand der letzten Messung: rund 20 rote Tests von ~1100.
+
+**Offen (ehrlich)**
+
+1. Windows-UI, Ursache noch ungeklärt (nur im Lauf gemessen, kein Windows-Rechner zum Nachstellen): `posteingang.spec` (3: Verwerfen/Übernehmen ohne Wirkung), `konflikt.spec` (1), `umbenennen.spec` (2), `browser-modus.spec` (2, Anmelden im Browser), `einrichtung.spec:900`, `vorschau-frage.spec` (2, Platzhalter-Claude), `zusammenbau.spec` (Spaltenbreite), `aktivitaet.spec:74`, `glocke.spec:402` (Tab-Fokus), `ki-text-aktionen.spec:317`, `schreiben.spec:424`, `tags-export.spec:215` (Zwischenablage mit `\r`?). `ki-konten.spec` (5) war ein CSS-Escape der Windows-Pfade, behoben (Bestätigung steht im Lauf). Tor erst, wenn diese Liste 0 ist.
+2. Windows-Kern, bewusst übersprungen mit Vermerk „R4-8 offen“ (`nurUnix`): 15 Tests der Pflege (`test-pflege-*`, `test-konto-hooks:141`, `test-pflege-b3:56`). Gemeinsamer Verdacht: der Test-pre-commit-Hook läuft in der Arbeitskopie nicht (Prüfung wird nicht rot), danach bleibt eine Arbeitskopie liegen und reißt Folgetests („already exists“); außerdem die Attrappe `claude` (`fake-sonnet`, Exit 4). Zusätzlich übersprungen, weil nur Unix: Verzeichnisrechte (chmod, 3 Tests), `Read(//Users/…)`-Regelmuster (Form für Windows-Laufwerke in Claude-Code-Rechten ungeklärt), relative POSIX-Pfade (W1-Pfadformen).
+3. UI-Zeitgrenzen: auf Windows nur geloggt (Skelett-Deckkraft), Dichte-Leiter der Kontingent-Leiste übersprungen (Schriftmaße).
+4. Nicht in der CI prüfbar: echter Linux-Desktop (Wayland/GNOME-Tray), SmartScreen, Update-Weg zwischen zwei Betas.
+
+**Was der Nutzer für die Beta-Freigabe tun muss** (nichts davon ist ausgeführt; kein Tag, kein Release, kein SignPath-Antrag)
+
+1. Entscheiden (Entscheidung 3): Beta mit der Liste „Offen“ oder erst Punkt 1 abwarten. Empfehlung: Beta freigeben, Windows-UI als „bekannte Lücken“ nennen; Kern, Hülle und Paket sind grün.
+2. Auf einem **echten Windows-Rechner** einmal prüfen: Installer (SmartScreen „Trotzdem ausführen“), Kortex starten, Einstellungen → Claude Code verbinden, in einer Claude-Sitzung läuft der Hook (Git Bash ist dafür Voraussetzung), Anmelden im Fenster (Browser öffnet sich), Tray-Symbol. Meldet sich etwas rot, bitte die Stelle nennen: dort fehlt mir ein Windows-Gerät.
+3. Auf einem **Linux-Desktop** (Ubuntu 24.04 und ein zweiter, z. B. Fedora/KDE): AppImage und deb starten, Tray sichtbar? (GNOME braucht die AppIndicator-Erweiterung, sonst beendet Schließen die App), Hook in einer Claude-Sitzung.
+4. Die Schritte in `docs/veroeffentlichen.md` §10 (Version, Pakete des grünen `main`-Laufs, Prerelease mit Tag, Update-Weg prüfen) selbst ausführen.
+5. SignPath-Antrag stellen (Wartezeit); bis dahin unsigniert.
+6. Markenrecht „Kortex“ klären (`veroeffentlichen.md` §10 Schritt 3 der Liste).

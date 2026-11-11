@@ -222,8 +222,8 @@ jobs:
         run: bash scripts/teste-vorschau.sh
 
   # Plattform-Probe (Paket W0, docs/plaene/plattformen-windows-linux.md): dieselben Node-, Kern- und Oberflächentests auf Windows und Linux.
-  # Linux ist ein TOR (der Job steht in `needs` von ci-ok, die Schritte laufen dort ohne continue-on-error). Windows ist MESSUNG: dort läuft jeder Schritt
-  # mit continue-on-error (ausgenommen die Node-Tests und die Vertrauensschranke vor git: Tor), der Job bleibt grün; Zahlen und rote Tests stehen in der Zusammenfassung des Laufs (Schritt „Bericht“) und als Artefakt.
+  # Linux ist ein TOR (der Job steht in `needs` von ci-ok, die Schritte laufen dort ohne continue-on-error). Windows (R4-8): Node-Tests, Vertrauensschranke und Kern-Unit-Tests sind TOR; nur die
+  # Oberflächentests (Playwright) sind dort noch MESSUNG (continue-on-error, der Job bleibt grün; Zahlen und rote Tests stehen in der Zusammenfassung des Laufs, Schritt „Bericht“, und als Artefakt).
   # Sobald Windows durchgehend grün ist, entfällt die Bedingung `matrix.os == 'windows-latest'` an den drei Schritten.
   plattform-probe:
     needs: aenderungen
@@ -275,10 +275,8 @@ jobs:
       - name: Kern-Unit-Tests
         id: lauf-kern
         if: matrix.bereich == 'kern'
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
         env:
           KERN_TEST_KONKURRENZ: 4
-          KORTEX_DIAGNOSE: 1
           GIT_AUTHOR_NAME: Test
           GIT_AUTHOR_EMAIL: t@example.org
           GIT_COMMITTER_NAME: Test
@@ -332,8 +330,7 @@ jobs:
           if-no-files-found: ignore
 
   # Electron-Hülle (Paket W2a, electron/, docs/plaene/plattformen-windows-linux.md): die ECHTE App (Playwright `_electron`) mit Test-Vault, Temp-HOME und eigenem Support-Ordner.
-  # Linux (xvfb) ist ein TOR (der Job steht in `needs` von ci-ok), Windows ist MESSUNG: der Test-Schritt läuft dort mit continue-on-error, der Job bleibt grün, das Ergebnis steht
-  # in der Zusammenfassung des Laufs. Sobald Windows durchgehend grün ist, entfällt die Bedingung `matrix.os == 'windows-latest'`.
+  # Linux (xvfb) UND Windows sind TOR (der Job steht in `needs` von ci-ok; R4-8). Sobald Windows durchgehend grün ist, entfällt die Bedingung `matrix.os == 'windows-latest'`.
   electron-probe:
     needs: aenderungen
     if: needs.aenderungen.outputs.node == 'true'
@@ -355,7 +352,6 @@ jobs:
           cache: npm
           cache-dependency-path: electron/package-lock.json
       - name: Abhängigkeiten (Electron lädt seine Programmdatei beim Installieren)
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
         run: npm ci --no-audit --no-fund
         working-directory: electron
       # Chromium-Sandbox unter Linux: der SUID-Helfer gehört root, und Ubuntu 24.04 sperrt unprivilegierte User-Namensräume. So läuft die App MIT Sandbox (kein --no-sandbox).
@@ -367,7 +363,6 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
       - name: Electron-Test
         id: lauf
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
         working-directory: electron
         env:
           KORTEX_BILDER: ${{ runner.temp }}/bilder

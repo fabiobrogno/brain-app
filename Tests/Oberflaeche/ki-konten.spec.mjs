@@ -44,7 +44,8 @@ async function start(page, opt = {}, { hash = "#einstellungen/ki", breite = 1440
 const unter = async (page, name) => { await page.locator(`[data-unter-wahl="${name}"]`).click(); await expect(page.locator(`[data-unter-wahl="${name}"]`)).toHaveAttribute("aria-checked", "true"); };
 const karte = (page, id) => page.locator(`.kx-prog[data-programm="${id}"]`);
 const konto = (page, id) => page.locator(`.kx-konto[data-konto="${id}"]`);
-const zelle = (page, k, v) => page.locator(`[data-kk="matrix-zelle"][data-konto="${k}"][data-vault="${v}"]`);
+const css = (p) => String(p).replaceAll("\\", "\\\\"); // Windows-Pfade in CSS-Attributselektoren
+const zelle = (page, k, v) => page.locator(`[data-kk="matrix-zelle"][data-konto="${k}"][data-vault="${css(v)}"]`);
 // Ein Menü schließt, sobald die Seite darunter scrollt: erst ruhig in die Mitte rollen, dann klicken
 const oeffneMenueAn = async (loc) => { await loc.evaluate((e) => e.scrollIntoView({ block: "center", behavior: "instant" })); await loc.page().waitForTimeout(150); await loc.click(); };
 const warteKonten = async (page) => { await expect(page.locator(".kx-prog").first()).toBeAttached(); await expect(page.locator('.kx-konto[data-anmeldung="prueft"]')).toHaveCount(0); };
@@ -349,7 +350,7 @@ test("Matrix: Stufe je Konto und Vault über das Menü; Lesen und Posteingang so
   await dlg(page, "sperren").locator('[data-aktion="konten-frage-abbrechen"]').click();
   await expect(zelle(page, "k_aaaa0003", FIRMA)).toHaveAttribute("data-stufe", "posteingang");
   // Neu gefundene Konten
-  await oeffneMenueAn(page.locator(`[data-kk="neue-stufen"][data-vault="${vault}"]`));
+  await oeffneMenueAn(page.locator(`[data-kk="neue-stufen"][data-vault="${css(vault)}"]`));
   await menueEintrag(page, "standard-lesen").click();
   expect(z.log("/api/ki/standard").at(-1).body).toEqual({ vault, stufe: "lesen" });
   await expect(page.locator('[data-kk="legende"]')).toContainText("tägliche Pflege mit KI");
@@ -425,7 +426,7 @@ test("Pflege je Vault: Konto (nur mit „Erweitert“) und wie viel KI je Vault,
   const z = await start(page, { ...VOLL(), zugriff, letzter: { zeit: "2026-10-31T02:12:00.000Z", status: "ok", erfolgreich: true, aufrufe: 18, tokEin: 100, tokAus: 50, modus: "echt" }, schalter: "an" });
   await warteKonten(page);
   await unter(page, "pflege");
-  const zeileM = page.locator(`.kx-pflege-zeile[data-vault="${vault}"]`), zeileF = page.locator(`.kx-pflege-zeile[data-vault="${FIRMA}"]`);
+  const zeileM = page.locator(`.kx-pflege-zeile[data-vault="${css(vault)}"]`), zeileF = page.locator(`.kx-pflege-zeile[data-vault="${css(FIRMA)}"]`);
   await expect(zeileM.locator('[data-kk="pflege-letzter"]')).toContainText("fertig");
   await expect(zeileF.locator('[data-kk="pflege-kein-konto"]')).toHaveText("Kein Konto mit „Erweitert“");
   await expect(zeileM.locator('[data-kk="pflege-jetzt"]')).toBeEnabled();
@@ -591,7 +592,7 @@ test("Pflege: mehrere Konten mit „Erweitert“ — eine Stufe vor dem Konto wa
   const z = await start(page, { ...VOLL(), zugriff: ZUGRIFF_PFLEGE() });
   await warteKonten(page);
   await unter(page, "pflege");
-  const zeile = page.locator(`.kx-pflege-zeile[data-vault="${vault}"]`);
+  const zeile = page.locator(`.kx-pflege-zeile[data-vault="${css(vault)}"]`);
   await zeile.locator('[data-stufe-wahl="klein"]').click();
   await expect(zeile.locator('[data-kk="pflege-waehle-zuerst"]')).toContainText("Wähle zuerst ein Konto");
   expect(z.log("/api/ki/pflege", "POST")).toHaveLength(0);
@@ -605,7 +606,7 @@ test("Pflege: „fertig, ohne KI (so eingestellt)“ zählt als Erfolg; ein Lauf
   await start(page, { ...VOLL(), zugriff: ZUGRIFF_PFLEGE(), letzter: { zeit: "2026-10-31T02:12:00.000Z", status: "ok-ohne-ki", erfolgreich: true, aufrufe: 0, tokEin: 0, tokAus: 0, modus: "echt" }, pflege: { [vault]: { konto: "k_aaaa0001", stufe: "aus" } } });
   await warteKonten(page);
   await unter(page, "pflege");
-  const zeile = page.locator(`.kx-pflege-zeile[data-vault="${vault}"]`);
+  const zeile = page.locator(`.kx-pflege-zeile[data-vault="${css(vault)}"]`);
   await expect(zeile.locator('[data-kk="pflege-letzter"]')).toContainText("fertig, ohne KI (so eingestellt)");
   await expect(zeile.locator('[data-kk="pflege-grund"]')).toHaveCount(0);
 });

@@ -171,8 +171,8 @@ export async function rufeSonnet(ctx, { system, eingabe, cwd, zeitlimitMs = SONN
     try {
       kind = execFile(v.befehl.befehl, [...v.befehl.args, ...args],
         { cwd, env, timeout: zeitlimitMs, windowsHide: true, maxBuffer: 8 * 1024 * 1024, encoding: "utf8" },
-        (err, stdout, stderr) => resolve(err
-          ? (process.env.KORTEX_DIAGNOSE === "1" && stderr && process.stderr.write(`rufeSonnet-stderr: ${String(stderr).slice(0, 800)}\n`), { fehler: err.killed ? "Zeitlimit" : err.code === "ENOENT" ? "claude nicht startbar" : `Exit ${err.code ?? "?"}` })
+        (err, stdout) => resolve(err
+          ? { fehler: err.killed ? "Zeitlimit" : err.code === "ENOENT" ? "claude nicht startbar" : `Exit ${err.code ?? "?"}` }
           : { ausgabe: String(stdout || "") }));
     } catch { resolve({ fehler: "claude nicht startbar" }); return; }
     kind.stdin?.on("error", () => {});

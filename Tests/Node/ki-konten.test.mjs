@@ -561,7 +561,7 @@ test("Installer: jeder Hook-Befehl trägt --konto <id>; --stand meldet es; ein f
   assert.equal(r.code, 0, r.fehler);
   const nachher = befehle(hooksVon(h));
   assert.equal(nachher.length, vorher, "dieselben Hooks, nichts doppelt");
-  assert.ok(nachher.every((c) => /--konto k_aaaaaaaa( |$)/.test(c) || / \|\| exit 0$/.test(c) && c.includes("--konto k_aaaaaaaa")), nachher.join("\n"));
+  assert.ok(nachher.every((c) => /--konto k_aaaaaaaa( |;|$)/.test(c) || / \|\| exit 0$/.test(c) && c.includes("--konto k_aaaaaaaa")), nachher.join("\n"));
   assert.ok(nachher.every((c) => c.includes("--konto k_aaaaaaaa")));
   assert.ok(nachher.some((c) => c.includes("--art fakt --konto k_aaaaaaaa")), "Argumente des Hooks bleiben vor der Kennung");
   const st = JSON.parse(installiere(["--stand", "--claude-home", h, "--konto", "k_aaaaaaaa"], { home, support }).aus);
