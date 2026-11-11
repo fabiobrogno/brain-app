@@ -73,7 +73,7 @@ const S = {
   pruef: new Map(), aktuellePruefung: null,
   git: null, offline: false, gesundheit: null, rueckfragen: null, syncLaeuft: false, syncFehler: null, ki: null, kiGeladen: false, kiVerbunden: false,
   zuletzt: [], suche: { aktiv: false, treffer: [], auswahl: 0, frage: "", ergebnis: null },
-  infoAn: leseLokal("infoAn", true), seiteAus: leseLokal("seiteAus", false) === true, roh: leseLokal("roh", false), breit: false, theme: "system", modus: "hell", darst: null,
+  infoAn: leseLokal("infoAn", true), seiteAus: leseLokal("seiteAus", false) === true, seiteSchwebt: false, wechselListe: null, roh: leseLokal("roh", false), breit: false, theme: "system", modus: "hell", darst: null,
   ladeNr: 0, bereit: false,
   umstellung: null,                          // P7c: { altlasten, umgestellt, angefangen } oder null (alter Werkzeug-Ordner im Vault und Stand der Umstellung)
   zeigeZurueckgestellt: false,               // Posteingang: false = offene Notizen, true = die mit „Später“ zurückgestellten
@@ -168,6 +168,7 @@ $("knopf-verlauf").replaceChildren(symbol("uhr", 16)); $("knopf-verlauf").title 
 $("knopf-info").replaceChildren(symbol("seitenleiste", 16)); $("knopf-info").title = T.werkzeuge.eigenschaften; $("knopf-info").setAttribute("aria-label", T.eigenschaften.titel);
 $("knopf-verlauf").addEventListener("click", () => oeffneVerlauf());
 $("knopf-info").addEventListener("click", () => umschalteInfo());
+$("knopf-mehr").replaceChildren(symbol("punkte", 16)); $("knopf-mehr").title = T.kopf.mehr; $("knopf-mehr").setAttribute("aria-label", T.kopf.mehr); $("knopf-mehr").addEventListener("click", oeffneMehrMenue);
 $("knopf-seite").replaceChildren(symbol("seitenleiste", 16)); $("knopf-seite").addEventListener("click", () => umschalteSeite());
 $("kopf-suche").addEventListener("click", () => oeffnePalette());
 $("knopf-suche").replaceChildren(symbol("suche", 16));
@@ -176,6 +177,11 @@ $("suche-zu").replaceChildren(symbol("schliessen", 12));
 $("vault-pfeil").replaceChildren(symbol("chevron-auf-ab", 14));
 $("au-zurueck").replaceChildren(symbol("pfeil-links", 14), h("span", { text: TAUF.zurueck }));
 $("au-zurueck").addEventListener("click", () => zurueckZumBoard());
+$("knopf-liste").replaceChildren(symbol("pfeil-links", 14), h("span", { text: T.kopf.notizen })); $("knopf-liste").addEventListener("click", () => zeigeListeSchmal());
+$("seite-scrim").addEventListener("click", () => schliesseSeiteUeber());
+// Überlagerte Seitenleiste: ein Ziel (Bereich, Ordner, Tag …) gewählt → sie macht den Weg frei; Pfeile zum Auf-/Zuklappen und das Vault-Menü lassen sie offen
+$("seite").addEventListener("click", (e) => { if (S.seiteSchwebt && e.target.closest(".eintrag, .baum .zeile, .tag-zeile, #fuss-neu, #fuss-merken") && !e.target.closest(".pfeil")) setTimeout(() => schliesseSeiteUeber({ fokus: false }), 0); });
+$("liste-koerper").addEventListener("click", (e) => { if (wechselAn() && e.target.closest("[data-karte], .vl-datei") && !e.target.closest(".karte-aktionen")) zeigeHauptSchmal(); }, true);
 // Frag deinen Vault (P4): Panel rechts, Knopf in der Kopfzeile, ⌘J und Befehlspalette. Die KI liest nur über Kortex, nichts wird gespeichert (frage.js).
 const frage = erzeugeFragePanel({ anhaenge, vaultPfad: () => S.info?.vault || null, oeffneSeite: (p) => oeffne(p), oeffneVertrauen: () => oeffneVertrauen(), oeffneKi: () => oeffneKi(),
   beiUmschalten: (offen) => { glatt(() => { S.frageAn = offen; begrenzeBreiten(); }); zeichneBereiche(); } });
@@ -413,6 +419,7 @@ async function legeWikiZielAn(ziel) {
 // verlauf: über Zurück/Vor geöffnet (kein neuer Eintrag, kein Fehler-Hinweis bei einer verschwundenen Notiz), zustand: Cursor und Scrollposition dort, beiFehlt(): die Notiz gibt es nicht mehr
 // zeile (+ spalte, laenge, begriffe): Sprung an die Fundstelle aus der Suche; die gesuchten Wörter werden im Text markiert (editor.js springeZu)
 async function oeffne(pfad, { zeile, spalte, laenge, begriffe, ausListe, ausBoard, verlauf: ausVerlauf = false, zustand = null, beiFehlt = null } = {}) {
+  if (!ausListe) zeigeHauptSchmal(); // Palette, Baum, Link: im Wechsel-Fenster (< 680 px) kommt der Editor nach vorn; Pfeiltasten in der Liste bleiben in der Liste
   const fund = begriffe || laenge ? { spalte, laenge, begriffe } : undefined;
   // anderer Weg (Baum, Palette, Link): das Ziel der Pfeiltasten gilt nicht mehr, und ein Klick in die Liste kurz davor kommt nicht mehr hinterher
   if (!ausListe) { listenZiel = null; clearTimeout(listenTimer); }
@@ -466,7 +473,7 @@ async function oeffne(pfad, { zeile, spalte, laenge, begriffe, ausListe, ausBoar
 async function oeffneEntwurf({ text, cursor = null, pfad = null, ordner = null, tag = null }) {
   // Ein Klick in die Liste öffnet erst nach 40 ms (oeffneAusListe). Kam ⌘N in dieser Zeit, öffnete die Karte danach über die neue Notiz,
   // und was man tippte, landete in der angeklickten Notiz (CI-Wackler schreiben.spec K1). Die neue Notiz ist der letzte Wunsch: der Klick entfällt.
-  clearTimeout(listenTimer); listenZiel = null;
+  clearTimeout(listenTimer); listenZiel = null; zeigeHauptSchmal();
   if (konfliktInst) { if (konfliktInst.laeuft()) return false; await schliesseKonflikt(konfliktInst.istFertig() ? "fertig" : "liste"); }
   if (S.konflikt) { toast(`Löse zuerst den Konflikt in „${ohneEndung(dateiName(S.pfad))}“.`, { fehler: true }); return false; }
   const nr = ++S.ladeNr;
@@ -1099,6 +1106,7 @@ function setzeModus() {
   if (vorher !== $("app").dataset.modus) aktualisiereStatusDatei(); // Wörter und Format gelten nur für eine Notiz im Editor, nicht im Board
   $("knopf-verlauf").setAttribute("aria-pressed", String(S.sicht.art === "verlauf"));
   zeichnePfad();
+  if (vorher !== $("app").dataset.modus) begrenzeBreiten(); // schmal: Liste/Editor im Wechsel gilt nur in „liste“ und „verlauf“
 }
 // Zähler für die Seitenleiste aus dem Notiz-Index: offen = noch nicht erledigt, überfällig = mit Fälligkeit vor heute
 function aufgabenZaehler() {
@@ -1436,10 +1444,11 @@ $("liste-koerper").addEventListener("keydown", (e) => {
   const liste = S.suche.aktiv ? S.suche.treffer : S.sichtListe;
   if (!liste.length) return;
   e.preventDefault();
-  if (e.key === "Enter") { if (S.pfad) ed.fokus(); return; }
+  if (e.key === "Enter") { if (S.pfad) { zeigeHauptSchmal(); ed.fokus(); } return; }
   let i = liste.findIndex((n) => n.pfad === (listenZiel && listenZiel.bis > Date.now() && listenZiel.pfad !== S.pfad ? listenZiel.pfad : S.pfad));
   i = e.key === "Home" ? 0 : e.key === "End" ? liste.length - 1 : e.key === "ArrowDown" ? Math.min(liste.length - 1, i + 1) : Math.max(0, i < 0 ? 0 : i - 1);
   const p = liste[i].pfad;
+  if (wechselAn() && wechselZeigtListe()) S.wechselListe = true; // Pfeile wählen aus, ohne den Editor nach vorn zu holen (Wechsel-Fenster)
   oeffneAusListe(p);
   if (!S.suche.aktiv && virt.aktiv()) virt.zeige(i);
   const k = $("liste-koerper").querySelector(`[data-karte][data-pfad="${CSS.escape(p)}"]`);
@@ -1716,7 +1725,7 @@ async function zeigeDiff(d) {
 function schliesseDiff() { diffInst?.zerstoere?.(); diffInst = null; const host = $("diff-host"); host.hidden = true; host.replaceChildren(); }
 
 // ======================================================= Kopfzeile: Brotkrumen, Werkzeuge, Pille
-function zeichnePfad() { zeichnePfadInnen(); schreiben.zeichneTagNavigation(); }
+function zeichnePfad() { zeichnePfadInnen(); schreiben.zeichneTagNavigation(); aktualisiereWechsel(); }
 function zeichnePfadInnen() {
   const p = $("pfad");
   if (konfliktInst) return; // in der Konflikt-Ansicht schreibt sie selbst die Brotkrume („Abgleich › …“, zeichnePfadKonflikt)
@@ -1771,6 +1780,21 @@ function zeichneWerkzeuge() {
   $("knopf-info").setAttribute("aria-pressed", String($("app").dataset.info === "an"));
   $("werkzeuge").replaceChildren(...k);
   $("editor").dataset.roh = S.roh ? "an" : "aus";
+}
+// Überlauf-Menü „…“ der Kopfzeile (schmal, < 660 px Kopfbreite): die Werkzeuge der Notiz und der Verlauf wandern hierher (schmal.css blendet ihre Knöpfe aus)
+function oeffneMehrMenue(e) {
+  const anker = e.currentTarget;
+  if (anker.getAttribute("aria-expanded") === "true") { schliesseMenue(); return; }
+  const fav = S.favoriten.has(S.pfad);
+  oeffneMenue(anker, [
+    ...(S.pfad ? [
+      { name: fav ? T.werkzeuge.favoritWeg : T.werkzeuge.favorit, symbol: fav ? "stern-voll" : "stern", id: "favorit", tun: () => umschalteFavorit() },
+      { name: S.roh ? T.werkzeuge.vorschau : T.werkzeuge.roh, symbol: "code", id: "roh", haken: S.roh, tun: () => umschalteRoh() },
+      { name: S.breit ? T.werkzeuge.schmal : T.werkzeuge.breit, symbol: "breite", id: "breit", haken: S.breit, tun: () => umschalteBreit() },
+      { name: T.werkzeuge.gliederung, symbol: "gliederung", id: "gliederung", tun: () => setTimeout(() => zeigeGliederung(anker), 0) },
+      { trenner: true }] : []),
+    { name: T.kopf.verlauf, symbol: "uhr", id: "verlauf", haken: S.sicht.art === "verlauf", tun: () => oeffneVerlauf() },
+  ], { breite: 232 });
 }
 function umschalteFavorit() {
   if (!S.pfad) return;
@@ -2902,14 +2926,23 @@ function umschalteInfo() {
 // Linke Seitenleiste ein- und ausblenden (R4-3, ⌃⌘S und der Knopf ganz links in der Kopfzeile). Aus: die Spalte hat 0 px und ist für die Tastatur nicht erreichbar; der Fokus geht in die Liste.
 function umschalteSeite() {
   const warDrin = $("seite").contains(document.activeElement);
+  if (seiteSchmal()) { // schmales Fenster: nur Überlagerung, die gespeicherte Einstellung bleibt unberührt
+    glatt(() => { S.seiteSchwebt = !S.seiteSchwebt; begrenzeBreiten(); });
+    if (S.seiteSchwebt) bereiche.gehe("seite");
+    else if (warDrin) (wechselAn() && $("app").dataset.wechsel === "haupt" ? $("knopf-seite") : $("liste-koerper")).focus({ preventScroll: true });
+    zeichneSeiteKnopf();
+    return;
+  }
   glatt(() => { S.seiteAus = !S.seiteAus; speichereLokal("seiteAus", S.seiteAus); begrenzeBreiten(); });
   if (S.seiteAus && warDrin) $("liste-koerper").focus({ preventScroll: true });
   zeichneSeiteKnopf();
 }
+const schliesseSeiteUeber = ({ fokus = true } = {}) => { if (S.seiteSchwebt) { S.seiteSchwebt = false; glatt(() => begrenzeBreiten()); zeichneSeiteKnopf(); if (fokus) $("knopf-seite").focus({ preventScroll: true }); } };
 function zeichneSeiteKnopf() {
   const k = $("knopf-seite"); if (!k) return;
-  const text = `${S.seiteAus ? T.kopf.seiteEin : T.kopf.seiteAus} (${kz.anzeige("seitenleiste-links")})`;
-  k.title = text; k.setAttribute("aria-label", S.seiteAus ? T.kopf.seiteEin : T.kopf.seiteAus);
+  const zu = !seiteSichtbar();
+  const text = `${zu ? T.kopf.seiteEin : T.kopf.seiteAus} (${kz.anzeige("seitenleiste-links")})`;
+  k.title = text; k.setAttribute("aria-label", zu ? T.kopf.seiteEin : T.kopf.seiteAus);
 }
 function umschalteInfoInnen() {
   if (infoSichtbar()) { S.infoAn = false; S.infoErzwungen = false; }
@@ -2931,7 +2964,7 @@ const E = { ...W }; // tatsächliche Breiten, wenn das Fenster nicht für alle W
 const EDITOR_MIN = 420, EDITOR_MIN_MIT_INFO = 560, EDITOR_MIN_MIT_FRAGE = 400;
 function wendeBreitenAn() {
   const app = $("app");
-  app.style.setProperty("--b-seite", (S.seiteAus ? 0 : E.seite) + "px"); app.style.setProperty("--b-liste", E.liste + "px"); app.style.setProperty("--b-info-voll", E.info + "px"); app.style.setProperty("--b-frage", E.frage + "px");
+  app.style.setProperty("--b-seite", (app.dataset.seite === "an" ? E.seite : 0) + "px"); app.style.setProperty("--b-seite-voll", E.seite + "px"); app.style.setProperty("--b-liste", E.liste + "px"); app.style.setProperty("--b-info-voll", E.info + "px"); app.style.setProperty("--b-frage", E.frage + "px");
 }
 // Öffnen und Schließen der rechten Spalte gleiten (280 ms, frage.css/studio.css); beim Ziehen und Verkleinern des Fensters nicht — das soll der Hand folgen.
 let glattTimer = null;
@@ -2942,27 +2975,48 @@ function glatt(f) {
   f();
   glattTimer = setTimeout(() => a.classList.remove("glatt"), 360);
 }
+// Schmale Fenster (R4-7): < 960 px liegt die Seitenleiste nur als Überlagerung über der Liste (Knopf/⌃⌘S, Esc, Klick daneben schließen), die Eigenschaften nur als Überlagerung
+// rechts, wenn sie neben dem Editor nicht passen; < 680 px stehen Liste und Editor im Wechsel (Zurück-Knopf „Notizen“ in der Kopfzeile). Alles folgt allein aus der Fensterbreite.
+const SEITE_INLINE_AB = 960, WECHSEL_UNTER = 680;
+const seiteSchmal = () => window.innerWidth < SEITE_INLINE_AB;
+const seiteSichtbar = () => (seiteSchmal() ? S.seiteSchwebt : !S.seiteAus);
+const wechselAn = () => window.innerWidth < WECHSEL_UNTER && ["liste", "verlauf"].includes($("app").dataset.modus || "liste");
+const wechselZeigtListe = () => (S.wechselListe ?? (!S.pfad && !S.entwurf)); // null = folgt dem Inhalt (ohne offene Notiz die Liste), true/false = ausdrücklich gewählt
+// Wechsel-Fenster (< 680 px): Liste und Editor stehen nacheinander. Der Editor kommt nach vorn, sobald etwas geöffnet wird; „Notizen“ in der Kopfzeile bringt die Liste zurück.
+function zeigeHauptSchmal() { if (S.wechselListe !== false) { S.wechselListe = false; aktualisiereWechsel(); } }
+function zeigeListeSchmal() { S.wechselListe = true; aktualisiereWechsel(); $("liste-koerper").focus({ preventScroll: true }); }
+function aktualisiereWechsel() { if (($("app").dataset.wechsel || "") !== (wechselAn() ? (wechselZeigtListe() ? "liste" : "haupt") : "")) begrenzeBreiten(); }
 function begrenzeBreiten() {
   for (const n of ["seite", "liste", "info", "frage"]) W[n] = Math.min(GRENZEN[n][1], Math.max(GRENZEN[n][0], W[n]));
-  // Neben der Eigenschaften-Spalte soll der Editor mindestens 560 px behalten, sonst klappt sie ein
+  if (!seiteSchmal()) S.seiteSchwebt = false;
+  const seiteInline = !seiteSchmal() && !S.seiteAus;
+  // Neben der Eigenschaften-Spalte soll der Editor mindestens 560 px behalten, sonst klappt sie ein; ein Klick holt sie dann als Überlagerung (kein Quetschen)
   S.infoEng = window.innerWidth < GRENZEN.seite[0] + GRENZEN.liste[0] + GRENZEN.info[0] + EDITOR_MIN_MIT_INFO;
   if (!S.infoEng) S.infoErzwungen = false;
   const zeige = infoSichtbar();
+  const infoUeber = zeige && S.infoEng;
+  const wechsel = wechselAn();
   Object.assign(E, W);
-  let uebrig = window.innerWidth - (S.seiteAus ? 0 : E.seite) - E.liste - (zeige ? E.info : 0) - (zeige && !S.infoErzwungen ? EDITOR_MIN_MIT_INFO : EDITOR_MIN);
-  for (const n of zeige ? ["info", "liste", "seite"] : ["liste", "seite"]) {
+  let uebrig = window.innerWidth - (seiteInline ? E.seite : 0) - (wechsel ? 0 : E.liste) - (zeige && !infoUeber ? E.info : 0) - (zeige && !infoUeber ? EDITOR_MIN_MIT_INFO : EDITOR_MIN);
+  for (const n of zeige && !infoUeber ? ["info", "liste", "seite"] : ["liste", "seite"]) {
     if (uebrig >= 0) break;
     const nimm = Math.min(E[n] - GRENZEN[n][0], -uebrig); E[n] -= nimm; uebrig += nimm;
   }
-  $("app").dataset.info = zeige ? "an" : "aus";
-  $("app").dataset.seite = S.seiteAus ? "aus" : "an";
-  $("knopf-seite")?.setAttribute("aria-pressed", String(!S.seiteAus));
+  // Überlagerungen sind höchstens so breit wie das Fenster abzüglich einem Streifen zum Wegklicken
+  E.seite = Math.min(E.seite, window.innerWidth - 56); E.info = Math.min(E.info, window.innerWidth - 56);
+  const app = $("app");
+  app.dataset.info = zeige ? "an" : "aus";
+  if (infoUeber) app.dataset.infoUeber = "ja"; else delete app.dataset.infoUeber;
+  app.dataset.seite = seiteInline ? "an" : seiteSichtbar() ? "schwebt" : "aus";
+  if (wechsel) app.dataset.wechsel = wechselZeigtListe() ? "liste" : "haupt"; else delete app.dataset.wechsel;
+  $("seite").toggleAttribute("inert", app.dataset.seite === "aus"); $("liste").toggleAttribute("inert", app.dataset.wechsel === "haupt");
+  $("knopf-seite")?.setAttribute("aria-pressed", String(seiteSichtbar()));
   $("knopf-info")?.setAttribute("aria-pressed", String(zeige && !S.frageAn));
   // „Frag deinen Vault“ nimmt den Platz der Eigenschaften und schiebt den Editor beiseite, wenn er danach noch mindestens 400 px hat; sonst liegt das Panel darüber
   if (S.frageAn) {
-    const schiebt = window.innerWidth - (S.seiteAus ? 0 : E.seite) - E.liste - E.frage >= EDITOR_MIN_MIT_FRAGE;
-    $("app").dataset.frageModus = schiebt ? "schiebt" : "deckt";
-  } else delete $("app").dataset.frageModus;
+    const schiebt = window.innerWidth - (seiteInline ? E.seite : 0) - (wechsel ? 0 : E.liste) - E.frage >= EDITOR_MIN_MIT_FRAGE;
+    app.dataset.frageModus = schiebt ? "schiebt" : "deckt";
+  } else delete app.dataset.frageModus;
   wendeBreitenAn();
 }
 const speichereBreiten = () => speichereLokal("breiten", W);
@@ -2989,7 +3043,7 @@ function richteGriffeEin() {
       W[name] = E[name] + (e.key === "ArrowRight" ? 16 : -16) * (name === "info" ? -1 : 1); begrenzeBreiten(); speichereBreiten();
     });
   });
-  window.addEventListener("resize", () => { $("app").classList.remove("glatt"); begrenzeBreiten(); }); // Fenstergröße folgt sofort, nur Öffnen/Schließen gleitet
+  window.addEventListener("resize", () => { $("app").classList.remove("glatt"); begrenzeBreiten(); zeichneSeiteKnopf(); }); // Fenstergröße folgt sofort, nur Öffnen/Schließen gleitet
 }
 
 // ======================================================= Tastatur
@@ -3046,12 +3100,16 @@ const bereiche = erzeugeBereiche([
   { id: "rechts", wurzel: () => (frage.istOffen() ? $("frage") : infoSichtbar() ? $("info") : null),
     fokus: () => { const w = frage.istOffen() ? $("frage") : $("info"); (w.querySelector("textarea, button:not([disabled]), input, [tabindex]:not([tabindex='-1'])") || (w.tabIndex = -1, w))?.focus({ preventScroll: true }); } },
 ]);
-kz.anmelden("region-weiter", () => bereiche.weiter(1), () => !!S.info?.vault && !dialogOffen());
-kz.anmelden("region-zurueck", () => bereiche.weiter(-1), () => !!S.info?.vault && !dialogOffen());
+// Die Seitenleiste als Überlagerung (schmales Fenster) schließt, sobald F6 den Fokus woandershin trägt
+const regionWeiter = (r) => { const warSeite = S.seiteSchwebt; bereiche.weiter(r); if (warSeite && !$("seite").contains(document.activeElement)) schliesseSeiteUeber({ fokus: false }); };
+kz.anmelden("region-weiter", () => regionWeiter(1), () => !!S.info?.vault && !dialogOffen());
+kz.anmelden("region-zurueck", () => regionWeiter(-1), () => !!S.info?.vault && !dialogOffen());
 // Esc als EIN Stapel (R4-3, tastatur.js): Popover/Menü und Dialog schließen sich selbst zuerst; dann Format-Leiste → Panels (Verlauf, Frag) → Suche → Textauswahl.
 // Jede Schicht schließt genau sich und gibt den Fokus an den Auslöser zurück.
 const textAuswahlOffen = () => { try { return !!S.pfad && ed.editorHatFokus() && !ed.view.state.selection.main.empty; } catch { return false; } };
 installiereEscStapel([
+  { id: "seite-ueber", offen: () => S.seiteSchwebt, zu: () => schliesseSeiteUeber() },
+  { id: "info-ueber", offen: () => !!S.infoErzwungen && S.infoEng && S.infoAn && !frage.istOffen(), zu: () => { umschalteInfo(); $("knopf-info").focus({ preventScroll: true }); } },
   { id: "format-leiste", offen: () => !!document.querySelector('.format-leiste[data-offen="ja"]') && textAuswahlOffen(), zu: () => { const v = ed.view; v.dispatch({ selection: { anchor: v.state.selection.main.head } }); } },
   { id: "verlauf", offen: () => S.sicht.art === "verlauf", zu: () => schliesseVerlauf() },
   { id: "frage", offen: () => frage.istOffen(), zu: () => (frage.laeuft() ? frage.abbrechen() : frage.schliesse()) },

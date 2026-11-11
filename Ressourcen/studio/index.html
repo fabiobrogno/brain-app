@@ -39,9 +39,11 @@
 <link rel="stylesheet" href="editor-darstellung.css">
 <link rel="stylesheet" href="ki-text.css">
 <link rel="stylesheet" href="tastatur.css">
+<link rel="stylesheet" href="schmal.css">
 </head>
 <body>
 <div id="app" data-info="an" data-modus="liste">
+  <div id="seite-scrim" class="seite-scrim" aria-hidden="true"></div>
   <aside id="seite" aria-label="Seitenleiste">
     <header class="seite-kopf">
       <button id="vault-wechsler" class="vault-knopf" aria-haspopup="menu" aria-expanded="false" title="Vault wechseln">
@@ -73,6 +75,7 @@
   <header id="kopf" class="kopf" aria-label="Kopfzeile">
     <div class="kopf-links">
       <button id="knopf-seite" class="knopf-icon" type="button" aria-pressed="true" aria-controls="seite" aria-keyshortcuts="Control+Meta+S"></button>
+      <button id="knopf-liste" class="knopf-text knopf-liste" type="button" aria-label="Zurück zur Notizliste"></button>
       <div id="nav-pfeile" class="nav-pfeile" role="group" aria-label="Zurück und Vor"></div>
       <button id="au-zurueck" class="knopf-text au-zurueck" type="button" data-aktion="aufgaben-zurueck"></button>
       <div id="pfad" class="pfad" aria-label="Pfad der Notiz"></div>
@@ -84,6 +87,7 @@
       <span id="pille" class="pille" hidden></span>
       <span id="speicherstand" class="speicherstand" aria-live="polite"></span>
       <div id="werkzeuge" class="werkzeuge" role="toolbar" aria-label="Werkzeuge der Notiz"></div>
+      <button id="knopf-mehr" class="knopf-icon knopf-mehr" type="button" aria-haspopup="menu" aria-expanded="false"></button>
       <button id="knopf-glocke" class="knopf-icon" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Mitteilungen" title="Mitteilungen"></button>
       <button id="knopf-verlauf" class="knopf-icon" type="button" aria-pressed="false"></button>
       <button id="knopf-info" class="knopf-icon" type="button" aria-pressed="false" aria-keyshortcuts="Meta+Backslash"></button>

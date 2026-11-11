@@ -106,8 +106,8 @@ lauf() { # leer | mit-vault | ohne-kern
   [ -f "$log" ] && [ -f "$STUB_LOG" ] || { echo "  FAIL kein Log (App oder Attrappe nicht gestartet)"; FEHLER=1; return; }
   breite="$(sed -n 's/.* fenster-auf studio \([0-9]*\)x\([0-9]*\)$/\1/p' "$log" | head -1)"
   hoehe="$(sed -n 's/.* fenster-auf studio \([0-9]*\)x\([0-9]*\)$/\2/p' "$log" | head -1)"
-  if [ -n "$breite" ] && [ "$breite" -ge 1100 ] && [ "$hoehe" -ge 700 ]; then
-    echo "  ok   Erster Start: Fenster ${breite}x${hoehe} (mindestens 1100x700, Standard 1440x900 bei genug Platz)"
+  if [ -n "$breite" ] && [ "$breite" -ge 720 ] && [ "$hoehe" -ge 520 ]; then
+    echo "  ok   Erster Start: Fenster ${breite}x${hoehe} (mindestens 720x520, Standard 1440x900 bei genug Platz)"
   else
     echo "  FAIL Fenstergröße beim ersten Start: ${breite:-?}x${hoehe:-?}"; FEHLER=1
   fi

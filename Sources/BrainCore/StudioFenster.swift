@@ -1,11 +1,11 @@
 import Foundation
 import CoreGraphics
 
-/// Maße und Namen des Studio-Fensters: Mindestgröße 1100×700; beim ersten Start etwa 85 % der sichtbaren Bildschirmfläche (mindestens
+/// Maße und Namen des Studio-Fensters: Mindestgröße 720×520 (R4-7: die Oberfläche hat Stufen für schmale Fenster, auch Split View auf einem 13"/14"-Mac; Electron gleich); beim ersten Start etwa 85 % der sichtbaren Bildschirmfläche (mindestens
 /// 1280×820, höchstens 1800×1150), mittig. Alle Größen sind Fenstergrößen — das Fenster hat eine durchsichtige Titelleiste über dem Inhalt
 /// (`fullSizeContentView`), Fenster- und Inhaltsgröße sind also gleich.
 public enum StudioFenster {
-    public static let minimum = CGSize(width: 1100, height: 700)
+    public static let minimum = CGSize(width: 720, height: 520)
     /// Anteil der sichtbaren Bildschirmfläche (ohne Menüleiste und Dock) je Achse beim ersten Start.
     public static let anteil: CGFloat = 0.85
     /// Untergrenze der Startgröße (ein kleinerer Bildschirm gibt sie auf seine sichtbare Fläche ab) und Obergrenze (auf riesigen Bildschirmen wird das Fenster nicht größer).
@@ -32,7 +32,7 @@ public enum StudioFenster {
         CGSize(width: max(groesse.width, minimum.width), height: max(groesse.height, minimum.height))
     }
 
-    /// Rahmen beim ersten Start: Startgröße, mittig im sichtbaren Bereich des Bildschirms. Ist der Bildschirm kleiner als das Fenster-Minimum (1100×700),
+    /// Rahmen beim ersten Start: Startgröße, mittig im sichtbaren Bereich des Bildschirms. Ist der Bildschirm kleiner als das Fenster-Minimum (720×520),
     /// behält das Fenster sein Minimum und sitzt je Achse bündig an der Oberkante bzw. linken Kante (so bleiben Titelleiste und Ampel erreichbar).
     public static func startrahmen(sichtbar: CGRect) -> CGRect {
         let g = startgroesse(sichtbar: sichtbar.size)

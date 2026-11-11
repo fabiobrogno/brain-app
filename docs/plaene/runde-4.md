@@ -302,6 +302,24 @@ Gebaut auf Branch `feat/r4-tastatur-fokus`. Fotos (Scratchpad der Sitzung): `r43
 - **Tests:** neu `Tests/Oberflaeche/tastatur-fokus.spec.mjs` (F6-Reihenfolge, Seitenleiste, Hell/Dunkel, Esc-Matrix mit 8 Flächen, Stapelreihenfolge, Fokus-Rückgabe, Tab-Lauf mit sichtbarem Fokus, kein natives `title`); bestehende Specs auf `data-tipp-text` bzw. neue Werte umgestellt.
 - **Offen:** Command-Control-S/F6 auf Windows/Linux (Strg gilt dort als Command): im Register änderbar, nicht auf echter Hardware geprüft; Mac-Menüeintrag für die neuen Befehle fehlt (kein `menue`-Name, nur Studio); Orange/Bernstein hell weiter Entscheidung 2.
 
+## Stand R4-7 (Schmale Fenster und Split View)
+
+Gebaut auf Branch `feat/r4-schmale-fenster`. **Entscheidung 4 = Ja umgesetzt:** Mindestgröße von Mac-App (`StudioFenster.minimum`) und Electron (`minWidth/minHeight`) einheitlich **720 × 520**; Swift-Tests angepasst. Fotos (Scratchpad der Sitzung): `r47-<fläche>-<breite>[-dunkel].png` für Liste, Editor, Posteingang, Aufgaben, Frag, Einstellungen bei 1440/1024/820/720/600 px, dazu `r47-seite-ueber-*`, `r47-info-ueber-*`, `r47-wechsel-liste-600`, `r47-kopf-menue-600`.
+
+**Stufen** (nur aus der Fensterbreite, `begrenzeBreiten` in `app.js`, Stil in `schmal.css`; Attribute `data-seite`, `data-info-ueber`, `data-wechsel` am `#app`):
+- **< 960 px** Seitenleiste nicht mehr in der Reihe, sondern Überlagerung (Knopf links in der Kopfzeile oder ⌃⌘S; Esc, Klick daneben, ein gewähltes Ziel oder F6 schließen sie; Fokus geht beim Öffnen hinein, beim Schließen an den Knopf). Die gespeicherte Ein/Aus-Wahl für breite Fenster bleibt unberührt. Ausgeblendet ist sie `inert` (nicht per Tab erreichbar). Die Kopfzeile lässt links Platz für die Ampel, wenn keine Seitenleiste in der Reihe steht.
+- **< 1256 px** Eigenschaften klappen ein (wie bisher); der Knopf (⌥⌘I) öffnet sie jetzt als **Überlagerung** rechts statt den Editor zu quetschen (Esc schließt). Der Editor ändert dabei weder Breite noch Lage. (Der Plan nannte 1 100 px; die tatsächliche Grenze folgt aus „Editor ≥ 560 px neben Eigenschaften“.)
+- **< 680 px** Liste und Editor im **Wechsel**: ohne offene Notiz die Liste, mit Klick/Enter/Palette/Link der Editor; „Notizen“ links in der Kopfzeile bringt die Liste zurück (Fokus in die Liste). Pfeiltasten in der Liste wählen aus, ohne den Editor nach vorn zu holen. Bei 720 px stehen Liste (248) und Editor (472) nebeneinander.
+- **Kopfzeile < 660 px Inhaltsbreite (Fenster ≈ 690 px):** Werkzeuge der Notiz und Verlauf wandern in ein Überlauf-Menü „…“ (Favorit, Rohtext, Breiter Text, Gliederung, Verlauf).
+- **Aufgaben-Board:** scrollt waagerecht, die Kante läuft zur Scrollrichtung aus (`data-kanten-x`, `bewegung.js/css`); der Hinweis „Noch keine Aufgaben“ füllt die Fensterbreite (war bei 600 px rechts abgeschnitten).
+
+**Gemessen** (`Tests/Oberflaeche/schmale-fenster.spec.mjs`, Chromium headless): 6 Flächen × 5 Breiten × hell/dunkel = 60 Messungen (kein Element über dem Rand, kein Behälter mit breiterem Inhalt, Kopfzeilenteile überlappen nicht, `scrollWidth == innerWidth`, Editor ≥ 420 px), Seitenleiste/Eigenschaften/Wechsel/Kopf-Menü per Tastatur, Hauptflächen bei 720 px, und ein Sweep 1440 → 600 → 1440 in 8-px-Schritten (kein Überstand in keinem Schritt, ≤ 4 Stufenwechsel, innerhalb einer Stufe wächst der Editor genau mit dem Fenster, Hin- und Rückweg gleich = keine Schwingung). Vorher: bei 600 px Editor rechts abgeschnitten (Kopfzeile 678 > 600 px, Hinweis im Board).
+
+**Offen:**
+- WebKit (WKWebView) und die echte Mac-Hülle nicht geprüft (Glas-Seitenleiste als Überlagerung ist mit deckendem Grund unterlegt, aber ohne echte App ungesehen; Ampel-Platz nur per CSS-Variable).
+- Die Stufengrenzen springen beim Ziehen an der Grenze (Spalte erscheint/verschwindet sofort, kein Gleiten beim Ziehen – gewollt, wie bei der rechten Spalte).
+- In der Wechsel-Ansicht gibt es kein eigenes Kürzel für „Notizen“ (nur Knopf/Tab); F6 überspringt die ausgeblendete Liste.
+
 ## Stand R4-2 (Editor-Darstellung vollständig)
 
 Gebaut auf Branch `feat/r4-editor-darstellung`. Fotos (Scratchpad der Sitzung): `r42-callouts-{hell,dunkel}.png`, `r42-callouts-cursor-{hell,dunkel}.png`, `r42-code-{hell,dunkel}.png`, `r42-neue-notiz-{hell,dunkel}.png`, `r42-tabelle-tastatur-{hell,dunkel}.png`, `r42-bild-tastatur-{hell,dunkel}.png`.
