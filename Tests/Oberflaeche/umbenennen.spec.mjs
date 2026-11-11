@@ -139,6 +139,28 @@ test("Ordner umbenennen: ungültiger Name zeigt einen Hinweis und wird nicht üb
   await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "20_projekte/Backwaren/Kuchen.md");
 });
 
+// Rennen (Wackler im Test oben unter Last): Zeichnete der Baum während des Tippens neu (Live-Ereignis, Fensterfokus), meldete Chromium „blur“ am noch
+// eingehängten Feld. Das Umbenennen endete, ein gültiger halber Name wurde sogar übernommen. Erzwungen: neue Datei plus Fensterfokus, während das Feld offen ist.
+test("Ordner umbenennen: Neuzeichnen des Baums beim Tippen beendet das Umbenennen nicht und übernimmt keinen halben Namen", async ({ page }) => {
+  await oeffne(page, "20_projekte/Rezepte/Kuchen.md");
+  await rechtsklick(page, zeile(page, "20_projekte/Rezepte"));
+  await menueEintrag(page, "umbenennen").click();
+  const feld = zeile(page, "20_projekte/Rezepte").locator(".inline-name");
+  await expect(feld).toBeFocused();
+  await feld.fill("Halb");
+  schreib("20_projekte/Neu.md", "# Neu\n");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(zeile(page, "20_projekte")).toHaveText(/20_projekte\s*4/); // der Baum hat neu gezeichnet (Zähler mit der neuen Notiz)
+  await expect(feld).toBeFocused();
+  await expect(feld).toHaveValue("Halb");
+  expect(existsSync(join(vault, "20_projekte/Halb"))).toBe(false);
+  await page.keyboard.type("e Torte"); // weiter am Ende, nicht alles ersetzt
+  await expect(feld).toHaveValue("Halbe Torte");
+  await page.keyboard.press("Escape");
+  await expect(feld).toHaveCount(0);
+  expect(existsSync(join(vault, "20_projekte/Rezepte/Kuchen.md"))).toBe(true);
+});
+
 test("Verschieben über den Ordner-Wähler: Suchen, Pfeiltasten, Enter; Verweise folgen; Rückgängig bringt die Notiz zurück", async ({ page }) => {
   await oeffne(page, "20_projekte/Zutaten.md");
   await rechtsklick(page, karte(page, "20_projekte/Zutaten.md"));

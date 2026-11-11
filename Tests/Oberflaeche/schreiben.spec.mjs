@@ -251,8 +251,9 @@ test("Zurück/Vor: ⌥⌘← und ⌥⌘→ stellen Cursor und Scrollposition je 
     return { anker: z.anker, kopf: z.kopf, oben: l ? Number(/^Zeile (\d+)/.exec(l.textContent)[1]) : -1 };
   });
   const gleich = (a, b) => a.anker === b.anker && a.kopf === b.kopf && Math.abs(a.oben - b.oben) <= 1;
+  // CodeMirror zeichnet die Zeilen des neuen Ausschnitts erst im nächsten Messdurchgang nach dem Scrollen (unter Last war sonst noch keine „Zeile n“ sichtbar: -1)
+  await expect.poll(async () => (await zustand()).oben).toBeGreaterThan(40);
   const merk = await zustand();
-  expect(merk.oben).toBeGreaterThan(40);
   const nav = (id) => page.locator(`#nav-${id}`);
   await expect(nav("zurueck")).toHaveAttribute("aria-disabled", "true");
   // zweite Notiz öffnen (Palette)

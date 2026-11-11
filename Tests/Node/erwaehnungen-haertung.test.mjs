@@ -200,7 +200,7 @@ test("Namenssatz unter Last: der erste Abruf nach dem Start findet die Notiz tro
   const verdraengt = (ms) => { const t = performance.now(); while (performance.now() - t < ms); };
   const langsam = { ...ix, dokumente: (ab) => { const r = ix.dokumente(ab); verdraengt(12); return r; } };
   const dienst = erzeugeErwaehnungen({ wurzel: d, index: () => langsam });
-  const r = await dienst.erwaehnungen(KAFFEE);
+  const r = await dienst.erwaehnungen(KAFFEE, { warteMs: 30_000, budgetMs: 10_000 }); // großzügig: geprüft wird nur der Namenssatz, nicht das Budget fürs Lesen
   assert.deepEqual(r.namen, ["Kaffee"], "der Namenssatz holt vor der Antwort auf: " + JSON.stringify(r));
   assert.equal(r.anzahlStellen, 3);
   assert.equal(r.vollstaendig, true);
@@ -223,7 +223,7 @@ test("Großer Vault direkt nach dem Start: solange der Namenssatz die Notiz noch
   assert.equal(r.aufbau.namen, false);
   assert.equal(r.vollstaendig, false, "ohne Eintrag im Namenssatz ist nichts geprüft: " + JSON.stringify(r));
   let n = 0, s = r;
-  while (!s.namen.length && n++ < 50) { await new Promise((ok) => setTimeout(ok, 20)); s = await dienst.erwaehnungen(KAFFEE); }
+  while (!s.vollstaendig && n++ < 100) { await new Promise((ok) => setTimeout(ok, 20)); s = await dienst.erwaehnungen(KAFFEE, { budgetMs: 10_000 }); }
   assert.deepEqual(s.namen, ["Kaffee"]);
   assert.equal(s.anzahlStellen, 3);
   dienst.beende(); ix.beende();

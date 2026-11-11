@@ -282,8 +282,17 @@ export function erzeugeDateiaktionen(ctx) {
       else if (e.key === "Escape") { e.preventDefault(); beendeInline(true); }
     });
     for (const ev of ["click", "dblclick", "mousedown", "pointerdown", "dragstart"]) input.addEventListener(ev, (e) => e.stopPropagation());
-    input.addEventListener("blur", () => { if (edit && input.isConnected) uebernehmen(input, hinweis, pruefen, true); });
-    requestAnimationFrame(() => { if (input.isConnected) { input.focus({ preventScroll: true }); input.select(); } });
+    // Zeichnet die Oberfläche neu (Live-Ereignis, Fensterfokus), meldet Chromium „blur“, solange das Feld noch im Dokument hängt. Sofort entschieden, endete
+    // das Umbenennen dabei, ein gültiger halb getippter Name wurde sogar übernommen. Darum erst nach dem laufenden Schritt entscheiden: Ist das Feld dann
+    // nicht mehr im Dokument, war es das Neuzeichnen, und nachZeichnen() bringt es zurück.
+    input.addEventListener("blur", () => { queueMicrotask(() => { if (edit && input.isConnected && document.activeElement !== input) uebernehmen(input, hinweis, pruefen, true); }); });
+    const erneut = edit.gebaut;
+    edit.gebaut = true;
+    requestAnimationFrame(() => {
+      if (!input.isConnected) return;
+      input.focus({ preventScroll: true });
+      if (erneut) { input.setSelectionRange(input.value.length, input.value.length); pruefen(); } else input.select(); // nach dem Neuzeichnen weiter am Ende tippen, nicht alles ersetzen
+    });
   }
   function uebernehmen(input, hinweis, pruefen, ausBlur = false) {
     if (!edit) return;

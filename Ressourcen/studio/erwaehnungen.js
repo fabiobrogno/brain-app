@@ -195,12 +195,12 @@ export function erzeugeErwaehnungen(ctx) {
       const ende = performance.now() + AUFBAU_MS;
       for (let runde = 1, i = 0; r; i++) {
         if (baut(r)) { if (performance.now() > ende) break; await warte(aufbauPause(i)); }
-        else { if (runde >= AUTOMATISCH) return; await warte(runde < 3 ? 80 : 160); }
+        else { if (runde >= AUTOMATISCH) break; await warte(runde < 3 ? 80 : 160); }
         if (!aktuell()) return;
         const jetzt = baut(r) ? runde : runde++;
         r = await einmal(jetzt);
       }
-      if (r && aktuell()) zeichne(r, true); // der Aufbau dauert länger als AUFBAU_MS: „Weiter prüfen“ anbieten statt stehen zu bleiben
+      if (r && aktuell()) zeichne(r, true); // noch nicht fertig (Aufbau länger als AUFBAU_MS oder Runden für `offen` vorbei): „Weiter prüfen“ anbieten statt stehen zu bleiben
     })();
   }
 
