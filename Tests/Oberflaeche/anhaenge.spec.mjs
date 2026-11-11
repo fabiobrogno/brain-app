@@ -92,8 +92,8 @@ test("Einfügen eines Bildes: Datei im Anhänge-Ordner, ![[…]] im Text, Bild i
   expect(dateien[0]).toMatch(/^\d{4}-\d{2}-\d{2}-\d{6}-image\.png$/);
   expect(lies(`_anhaenge/${dateien[0]}`).subarray(0, 4).toString("hex")).toBe("89504e47");
   expect(await docText(page)).toContain(`![[${dateien[0]}]]`);
-  // Cursor in der Zeile: Text und Bild dahinter; Cursor weg: nur das Bild
-  await expect(page.locator(".cm-anhang-dahinter")).toHaveCount(1);
+  // Cursor am Rand der Schreibweise (nach dem Einfügen): nur das Bild; Rohtext erst mit dem Cursor mitten darin (R4-2)
+  await expect(page.locator(".cm-anhang-dahinter")).toHaveCount(0);
   await cursorAnAnfang(page);
   await expect(page.locator(".cm-anhang-dahinter")).toHaveCount(0);
   await expect(page.locator(".cm-content")).not.toContainText("![[");

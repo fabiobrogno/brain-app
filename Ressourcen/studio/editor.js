@@ -11,6 +11,8 @@ import * as FM from "./formatieren.js";
 import { formatLeiste } from "./format-leiste.js";
 import { langeAbsaetze } from "./editor-lange-absaetze.js"; // R4-5: Riesen-Absätze ohne quadratisches Link-Parsen
 import { schraegstrichMenue } from "./schraegstrich.js"; // „/“ öffnet das Einfüge-Menü an der Schreibmarke
+import { calloutErweiterung, findeCallouts } from "./editor-callouts.js"; // R4-2: Callouts „> [!typ] Titel“
+import { codeFarben, codeSprachen, zaeune, titelPlatzhalter } from "./editor-code.js"; // R4-2: Code-Blöcke mit Farben, Zäune nur am Cursor, Kopier-Knopf; Platzhalter „Titel“
 
 const { EditorState, EditorSelection, EditorView, Decoration, ViewPlugin, WidgetType, StateField, StateEffect, GutterMarker, MapMode, gutter, keymap, Prec } = CM;
 
@@ -185,6 +187,7 @@ function vorschau(view, ctx) {
   const fm = kopfBereich(doc);
   const fmBis = fm ? fm.bis : -1;
   const zeilenKlasse = new Map(); // Zeilenanfang -> Klassen
+  const calloutListe = findeCallouts(state), callouts = new Set(calloutListe.map((c) => c.von)); // Zitate, die editor-callouts.js als Callout zeichnet: kein Zitatstrich, keine sichtbaren Marken
 
   const klasse = (pos, k) => {
     const l = doc.lineAt(pos).from;
@@ -233,7 +236,12 @@ function vorschau(view, ctx) {
         if (name === "HeaderMark") {
           if (doc.sliceString(n.from, n.to).startsWith("#")) {
             const ende = doc.sliceString(n.to, n.to + 1) === " " ? n.to + 1 : n.to;
-            if (!zeileAktiv(n.from)) liste.push(verstecken.range(n.from, ende));
+            // Leere Titelzeile („# “, z. B. neue Notiz): das nackte „#“ bleibt auch am Cursor versteckt, stattdessen steht der Platzhalter „Titel“ da
+            if (!roh && n.node.parent?.name === "ATXHeading1" && !doc.sliceString(n.to, doc.lineAt(n.from).to).trim()) {
+              const z = doc.lineAt(n.from);
+              if (z.to > z.from) liste.push(verstecken.range(z.from, z.to));
+              liste.push(titelPlatzhalter().range(z.to));
+            } else if (!zeileAktiv(n.from)) liste.push(verstecken.range(n.from, ende));
             else liste.push(Decoration.mark({ class: "cm-marke" }).range(n.from, n.to));
           }
           return;
@@ -258,14 +266,16 @@ function vorschau(view, ctx) {
             const lf = doc.line(i).from;
             zeilenKlasse.set(lf, (zeilenKlasse.get(lf) || "") + " " + k);
           }
+          if (!roh) zaeune(n.node, doc, zeileAktiv, liste, verstecken);
           return;
         }
         if (name === "Blockquote") {
+          if (callouts.has(n.from)) return; // editor-callouts.js zeichnet Kasten und Marken; Text darin (fett, Link …) bleibt hier
           const l1 = doc.lineAt(n.from).number, l2 = doc.lineAt(n.to).number;
           for (let i = l1; i <= l2; i++) { const lf = doc.line(i).from; zeilenKlasse.set(lf, (zeilenKlasse.get(lf) || "") + " cm-zitat"); }
           return;
         }
-        if (name === "QuoteMark") { liste.push(Decoration.mark({ class: "cm-marke" }).range(n.from, n.to)); return; }
+        if (name === "QuoteMark") { if (calloutListe.some((c) => n.from >= c.von && n.to <= c.bis)) return; liste.push(Decoration.mark({ class: "cm-marke" }).range(n.from, n.to)); return; }
         if (name === "HorizontalRule") { klasse(n.from, "cm-trenner"); return; }
         if (name === "TaskMarker") {
           if (roh) { liste.push(Decoration.mark({ class: "cm-marke" }).range(n.from, n.to)); return; }
@@ -623,7 +633,8 @@ export function erstelleEditor(eltern, ctx) {
     CM.drawSelection(),
     CM.highlightSelectionMatches(),
     CM.search({ top: true }),
-    CM.markdown({ base: CM.markdownLanguage, extensions: [langeAbsaetze] }),
+    CM.markdown({ base: CM.markdownLanguage, extensions: [langeAbsaetze], codeLanguages: codeSprachen }),
+    codeFarben,
     EditorView.lineWrapping,
     zeilenendeEinfuegen,
     zeilenendeEingabe,
@@ -637,6 +648,7 @@ export function erstelleEditor(eltern, ctx) {
     formatLeiste(ctx),
     schraegstrichMenue({ ...ctx, kopfBereich: kopfBereich }),
     vorschauPlugin(ctx),
+    ...calloutErweiterung(ctx, { neuZeichnen }).felder,
     ...(ctx.anhaenge ? anhangErweiterung(ctx.anhaenge, ctx) : []),
     CM.autocompletion({ override: [wikiQuelle(ctx), ...(ctx.tagVorschlaege ? [tagQuelle(ctx)] : [])], icons: false, tooltipClass: () => "cm-wikiliste" }),
     keymap.of([
