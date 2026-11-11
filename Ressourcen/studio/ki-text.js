@@ -4,6 +4,7 @@
 // Einstiege: KI-Knopf der Format-Leiste, Kontextmenü, Befehlspalette (⌘K). Alle öffnen dasselbe Popover (Menü → Lauf → Diff/Aufgaben/Fehler). Tastatur: ↑↓ ⏎ im Menü, ⏎ übernehmen, Esc verwerfen.
 // Alle KI-Texte werden als Text gesetzt (textContent), nie als HTML; Warnzeilen baut Kortex selbst.
 import { h, toast, dialogOffen } from "./hilfen.js";
+import { isolateHistory } from "./vendor/codemirror.bundle.js"; // eine Übernahme ist EIN eigener Undo-Schritt (R4-4, K2 Befund 9)
 import { knopf as baueKnopf, umschalter } from "./bausteine.js";
 import { symbol } from "./symbole.js";
 import { api } from "./api.js";
@@ -322,7 +323,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
     if (!textNochDa()) { z.gesperrt = true; zeichne(); return; }
     const v = ed.view, s = z.snap, len = v.state.toText(z.ersatz).length;
     z.uebernimmt = true;
-    v.dispatch({ changes: { from: s.von, to: s.bis, insert: z.ersatz }, selection: { anchor: s.von, head: s.von + len }, scrollIntoView: true, userEvent: "input.ki" });
+    v.dispatch({ changes: { from: s.von, to: s.bis, insert: z.ersatz }, selection: { anchor: s.von, head: s.von + len }, scrollIntoView: true, userEvent: "input.ki", annotations: isolateHistory.of("full") });
     schliesse(); v.focus();
     toast(TK.diff.uebernommen, { ms: 5000 });
   }
@@ -332,7 +333,7 @@ export function erzeugeKiText({ S, ed, speichereWarte, nachAufgaben }) {
     const v = ed.view, s = z.snap;
     const { pos, einfuegen } = L.aufgabenEinfuegung(v.state.doc.toString(), s.bis, z.aufgaben);
     z.uebernimmt = true;
-    v.dispatch({ changes: { from: pos, to: pos, insert: L.mitZeilenende(einfuegen, s.lb) }, selection: { anchor: s.von, head: s.bis }, scrollIntoView: true, userEvent: "input.ki" });
+    v.dispatch({ changes: { from: pos, to: pos, insert: L.mitZeilenende(einfuegen, s.lb) }, selection: { anchor: s.von, head: s.bis }, scrollIntoView: true, userEvent: "input.ki", annotations: isolateHistory.of("full") });
     schliesse(); v.focus();
     toast(TK.aufgaben.eingefuegt, { ms: 5000 });
   }

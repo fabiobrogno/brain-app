@@ -11,6 +11,9 @@ const SEITE = 60;
 const MAX_SEITE = 200; // so viele Commits liefert /api/git/log höchstens je Aufruf
 const MAX_DIFF_ZEILEN = 4000;
 const UNGESICHERT = "__ungesichert";
+// „Technische Details“: Hashes, Zeilenzahlen und das Wort „Commit“ erscheinen nur, wenn man sie einschaltet (Standard: aus; gilt für Liste und Änderungsansicht).
+const TECHNISCH_SCHLUESSEL = "verlauf-technisch";
+export const leseTechnisch = () => leseLokal(TECHNISCH_SCHLUESSEL, false) === true;
 
 // ---------------------------------------------------------------- Stylesheet (lädt sich selbst, einmalig)
 const CSS_URL = new URL("./verlauf.css", import.meta.url).href;
@@ -136,7 +139,7 @@ const DIFFS = new WeakMap();
 export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGesperrt } = {}) {
   LISTEN.get(host)?.zerstoere();
   // naechste = „vor“-Wert für die nächste Seite, so wie die Werkstatt ihn liefert (fehlt er: der letzte geladene Commit)
-  const z = { phase: "laedt", fehler: null, tage: [], ungesichert: [], ende: false, naechste: null, laedtMehr: false, mehrFehler: false };
+  const z = { phase: "laedt", fehler: null, tage: [], ungesichert: [], ende: false, naechste: null, laedtMehr: false, mehrFehler: false, technisch: leseTechnisch() };
   const eingeklappt = new Set();   // Tage (Datum), die zu sind
   const offen = new Set();         // Commits (sha), die aufgeklappt sind
   let gewaehlt = null;             // Schlüssel der gewählten Datei
@@ -162,6 +165,7 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
       teile.push(leerBlock("warnung", TV.fehler.titel, roh ? TV.roh.verlauf : (z.fehler || TV.fehler.text), { nochmal: true, details: roh ? z.fehler : null }));
     }
     else {
+      teile.push(technischSchalter());
       if (z.ungesichert.length) teile.push(h("div", { klasse: "vl-ungesichert" }, commitBlock(ungesichertCommit(), { ungesichert: true })));
       if (!z.tage.length) teile.push(leerBlock("verlauf", TV.leer.titel, TV.leer.text));
       for (const t of z.tage) teile.push(tagBlock(t));
@@ -172,6 +176,12 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
     markiere();
     if (fokusNach) fokussiere(wurzel.querySelector(`[data-schluessel="${CSS.escape(fokusNach)}"]`));
     else if (hatteFokus) fokussiere(fokusKey && wurzel.querySelector(`[data-schluessel="${CSS.escape(fokusKey)}"]`) || wurzel.querySelector(".vl-zeile"));
+  }
+
+  function technischSchalter() {
+    const b = h("button", { klasse: "vl-tech", type: "button", "data-aktion": "technisch", "aria-pressed": String(z.technisch), text: TV.technisch.knopf });
+    b.addEventListener("click", () => { z.technisch = !z.technisch; speichereLokal(TECHNISCH_SCHLUESSEL, z.technisch); zeichne({ fokusNach: null }); wurzel.querySelector(".vl-tech")?.focus(); });
+    return h("div", { klasse: "vl-tech-zeile" }, b, h("span", { klasse: "vl-tech-hinweis", text: TV.technisch.hinweis }));
   }
 
   const ungesichertCommit = () => ({
@@ -206,7 +216,7 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
       h("span", { klasse: "vl-chev" }, zeichen("chevron-unten", 12)),
       h("span", { klasse: "vl-tagtext", text: tagesTitel(t.datum) }),
       tagesLabel(t.datum) ? h("span", { klasse: "vl-tagrel", text: tagesLabel(t.datum) }) : null,
-      h("span", { klasse: "vl-tagzahl", text: TV.tagZahl(t.commits.length) }));
+      h("span", { klasse: "vl-tagzahl", text: TV.tagZahl(t.commits.length, z.technisch) }));
     const gruppe = h("div", { klasse: "vl-gruppe vl-commits", role: "group", hidden: zu }, t.commits.map((c) => commitBlock(c)));
     return h("section", { klasse: "vl-tag" }, kopf, gruppe);
   }
@@ -219,10 +229,12 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
       : [
         c.zeit ? h("span", { klasse: "vl-zeit", title: volleZeit(c.zeit), text: relativeZeit(c.zeit) }) : null,
         c.autor ? h("span", { klasse: "vl-autor", title: TV.von(c.autor), text: c.autor }) : null,
-        h("span", { klasse: "vl-hash", text: c.kurz }),
-        c.plus > 0 ? h("span", { klasse: "vl-plus", title: TV.zaehlerPlus(c.plus), text: "+" + c.plus }) : null,
-        c.geaendert > 0 ? h("span", { klasse: "vl-aender", title: TV.zaehlerAender(c.geaendert), text: "~" + c.geaendert }) : null,
-        c.geloescht > 0 ? h("span", { klasse: "vl-weg", title: TV.zaehlerWeg(c.geloescht), text: "−" + c.geloescht }) : null,
+        ...(z.technisch ? [
+          h("span", { klasse: "vl-hash", text: c.kurz }),
+          c.plus > 0 ? h("span", { klasse: "vl-plus", title: TV.zaehlerPlus(c.plus), text: "+" + c.plus }) : null,
+          c.geaendert > 0 ? h("span", { klasse: "vl-aender", title: TV.zaehlerAender(c.geaendert), text: "~" + c.geaendert }) : null,
+          c.geloescht > 0 ? h("span", { klasse: "vl-weg", title: TV.zaehlerWeg(c.geloescht), text: "−" + c.geloescht }) : null,
+        ] : [c.dateien.length ? h("span", { klasse: "vl-dateizahl", text: TV.dateien(c.dateien.length) }) : null]),
       ];
     const zeile = h("div", { klasse: "vl-zeile vl-commitzeile" + (ungesichert ? " ungesichert" : ""), role: "treeitem", "aria-level": ungesichert ? "1" : "2", "aria-expanded": String(auf), "aria-label": ungesichert ? `${TV.ungesichert} · ${c.dateien.length}` : undefined, tabindex: "-1", "data-art": "commit", "data-schluessel": "c:" + key, "data-sha": c.sha || "", title: c.nachricht || undefined },
       h("span", { klasse: "vl-knoten" + (ungesichert ? " ungesichert" : "") }, ungesichert ? zeichen("stift", 14) : avatar(c.autor)),
@@ -537,6 +549,7 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
   const ungesichert = !sha;
   const o = ordnerVon(pfad || "");
   const kannWieder = !ungesichert && status !== "D";
+  const technisch = leseTechnisch();
   const stat = h("span", { klasse: "vd-stat" });
 
   const zurueck = h("button", { klasse: "vd-zurueck", type: "button", "data-aktion": "diff-zu" }, zeichen("pfeil-links", 14), h("span", { text: TV.diff.zurueck }));
@@ -559,7 +572,7 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
         ungesichert
           ? h("span", { klasse: "vd-ungesichert", text: TV.ungesichert })
           : [
-            h("span", { klasse: "vd-hash", text: kurz || "" }),
+            technisch ? h("span", { klasse: "vd-hash", text: kurz || "" }) : null,
             nachricht ? h("span", { klasse: "vd-nachricht", text: nachricht }) : null,
             zeit ? h("span", { klasse: "vd-zeit", title: volleZeit(zeit), text: relativeZeit(zeit) }) : null,
           ],
@@ -599,7 +612,7 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
     if (d.binaer && !d.zeilen.some((x) => x.art !== "k")) { koerper.replaceChildren(h("p", { klasse: "vd-hinweis", text: TV.diff.keinText })); return; }
     const gesamt = d.zeilen.length;
     const gezeigt = d.zeilen.slice(0, MAX_DIFF_ZEILEN);
-    setze(stat,
+    if (technisch) setze(stat,
       d.plus ? h("span", { klasse: "vl-plus", title: TV.diff.plusZeilen(d.plus), text: "+" + d.plus }) : null,
       d.minus ? h("span", { klasse: "vl-weg", title: TV.diff.minusZeilen(d.minus), text: "−" + d.minus }) : null);
     geparst = { gesamt }; gezeigtZeilen = gezeigt;

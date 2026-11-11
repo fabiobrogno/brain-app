@@ -222,6 +222,7 @@ export const T = {
     fest: [
       { name: "Liste", zeilen: [["↑ ↓", "Nächste oder vorige Notiz öffnen"], ["↵", "In die Notiz springen"], ["F2", "Notiz oder Ordner umbenennen"], ["⌘ ⌫", "Notiz in den Papierkorb legen"]] },
       { name: "Aufgaben-Board", zeilen: [["↑ ↓", "Zwischen Karten wechseln"], ["← →", "In die Nachbarspalte"], ["⌥ ← → ↑ ↓", "Karte verschieben"], ["↵", "Notiz der Aufgabe öffnen"]] },
+      { name: "Rückgängig", zeilen: [["⌘ Z", "Im Text: Tippen zurücknehmen. Sonst: den letzten Vorgang (Papierkorb, Verschieben, Umbenennen) zurücknehmen"], ["⇧ ⌘ Z", "Wiederholen"]] },
       { name: "Esc", zeilen: [["Esc", "Schließt immer das Oberste: Menü, Dialog, Format-Leiste, Panel, Suche, Auswahl"]] },
     ],
     schliessen: "Schließen",

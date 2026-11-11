@@ -459,6 +459,7 @@ button.st { cursor: pointer; } button.st:hover { background: var(--hover); color
 .toast.fehler { border-color: var(--rot-rand); background: color-mix(in srgb, var(--rot) 8%, var(--erhoben)); }
 .toast a { color: var(--akzent-tinte); font-weight: 500; text-decoration: none; cursor: pointer; }
 .toast a:hover { text-decoration: underline; }
+.toast-kz { margin-left: -4px; padding: 1px 6px; border: 1px solid var(--linie); border-radius: 5px; font: 500 11px/16px var(--schrift); color: var(--text-2); white-space: nowrap; }
 @keyframes ein { from { opacity: 0; } }
 @keyframes hoch { from { opacity: 0; transform: translateY(6px) scale(.985); } }
 @keyframes zoom { from { opacity: 0; transform: scale(.96); } }

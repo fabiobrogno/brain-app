@@ -305,3 +305,12 @@
   .ab-dialog *, .zh-dialog *, .seg *, .roh-details * { animation: none !important; transition: none !important; }
 }
 .ab-datei + * { clear: both; }
+
+/* Technische Details: ein ruhiger Schalter über der Liste (Standard aus: keine Kürzel, keine Zeilenzahlen) */
+.vl-dateizahl::before { content: "·"; margin-right: 8px; color: var(--text-3); }
+.vl-tech-zeile { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--linie); font-size: 12px; line-height: 16px; color: var(--text-2); }
+.vl-tech { flex: none; height: 24px; padding: 0 10px; border-radius: var(--r-pille); border: 1px solid var(--linie); background: transparent; color: var(--text-2); font: inherit; font-weight: 550; cursor: pointer; transition: background-color var(--t), color var(--t); }
+.vl-tech:hover { background: var(--hover); }
+.vl-tech[aria-pressed="true"] { background: var(--akzent-weich); color: var(--akzent); border-color: transparent; }
+.vl-tech:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+.vl-tech-hinweis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); }
