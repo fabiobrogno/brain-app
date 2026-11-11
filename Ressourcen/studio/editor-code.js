@@ -56,13 +56,13 @@ export function codeText(state, pos) {
 }
 
 function kopiere(text) {
+  // Ersatzweg ohne Eingabefeld: das copy-Ereignis von execCommand("copy") bekommt den Text mit
   const nimm = () => new Promise((ok, nein) => {
-    const a = document.createElement("textarea");
-    a.value = text; a.setAttribute("readonly", ""); a.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
-    document.body.append(a); a.select();
+    const beim = (e) => { e.clipboardData.setData("text/plain", text); e.preventDefault(); };
+    document.addEventListener("copy", beim, { once: true });
     let gut = false;
     try { gut = document.execCommand("copy"); } catch { /* nicht erlaubt */ }
-    a.remove();
+    document.removeEventListener("copy", beim);
     gut ? ok() : nein(new Error("kopieren"));
   });
   return navigator.clipboard?.writeText ? navigator.clipboard.writeText(text).catch(nimm) : nimm();
