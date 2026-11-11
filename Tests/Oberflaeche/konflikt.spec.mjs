@@ -537,7 +537,7 @@ test("Ein gemerkter Stand blockiert die Sicherung sichtbar: Banner und Statuslei
   await page.route(/\/api\/git\/nachsehen$/, (r) => r.fulfill({ json: stand }));
   await page.goto(server.url);
   await expect(page.locator('[data-banner="abgleich"]')).toContainText("Die Online-Sicherung wartet auf deine Entscheidung — seit 4 Tagen.");
-  await expect(page.locator('[data-st="sync"]')).toHaveAttribute("title", /sendet nichts, solange diese Entscheidungen offen sind \(seit 4 Tagen\)/);
+  await expect(page.locator('[data-st="sync"]')).toHaveAttribute("data-tipp-text", /sendet nichts, solange diese Entscheidungen offen sind \(seit 4 Tagen\)/);
   await expect(page.locator('[data-st="sync"]')).toContainText("Konflikt in 2 Notizen");
 });
 

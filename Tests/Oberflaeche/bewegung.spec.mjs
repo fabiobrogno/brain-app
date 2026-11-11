@@ -212,7 +212,7 @@ test("CLS beim langsamen Laden: Skelett hält den Platz, Liste und Seitenleiste 
   let frei;
   const tor = new Promise((r) => { frei = r; });
   await page.route("**/api/baum", async (route) => { await tor; await route.continue(); });
-  await page.route("**/api/notizen", async (route) => { await tor; await route.continue(); });
+  await page.route(/\/api\/notizen(\?.*)?$/, async (route) => { await tor; await route.continue(); });
   await page.addInitScript(() => {
     window.__cls = 0;
     new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__cls += e.value; }).observe({ type: "layout-shift", buffered: true });
@@ -363,18 +363,19 @@ test("Kein „null“, „undefined“ oder „NaN“ in den Hauptansichten; sch
   await scan("Palette");
 });
 
-test("Tooltips: Symbolknöpfe zeigen den eigenen Tooltip (nach 500 ms bzw. bei Tastaturfokus), das title kommt danach zurück", async ({ page }) => {
+test("Tooltips: Symbolknöpfe zeigen den eigenen Tooltip (nach 500 ms bzw. bei Tastaturfokus), nie ein natives title", async ({ page }) => {
   await aufbauen();
   await oeffneStudio(page);
   const knopf = page.locator("#knopf-neu");
   await knopf.hover();
   await expect(page.locator(".bs-tipp.offen")).toBeVisible({ timeout: 2000 });
   await expect(page.locator(".bs-tipp")).toContainText("Neue Notiz");
-  await expect(knopf).not.toHaveAttribute("title", /./); // solange der Tooltip steht, kein zweiter (System-)Tooltip
+  await expect(knopf).not.toHaveAttribute("title", /./); // nie ein zweiter (System-)Tooltip
   await bild(page, "tooltip");
   await page.mouse.move(700, 500);
   await expect(page.locator(".bs-tipp")).toHaveCount(0);
-  await expect(knopf).toHaveAttribute("title", /Neue Notiz/);
+  await expect(knopf).not.toHaveAttribute("title", /./);
+  await expect(knopf).toHaveAttribute("data-tipp-text", /Neue Notiz/);
   await expect(knopf).toHaveAttribute("aria-label", "Neue Notiz");
 });
 

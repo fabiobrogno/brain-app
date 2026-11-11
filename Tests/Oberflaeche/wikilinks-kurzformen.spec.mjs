@@ -35,18 +35,18 @@ test("K1: [[Neue Idee]] → „Anlegen“ → der Link ist danach nicht mehr off
   await link.click();
   await expect(page.locator("#toast-host .toast")).toContainText("gibt es noch nicht");
   await page.locator("#toast-host .toast a", { hasText: "Anlegen" }).click();
-  await expect(page.locator("#pfad")).toHaveAttribute("title", "10_notizen/neue-idee.md");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "10_notizen/neue-idee.md");
   expect(lese("10_notizen/neue-idee.md")).toBe("# Neue Idee\n");
   // zurück zur ersten Notiz: der Link ist aufgelöst (Titel, nicht Dateiname)
   await page.keyboard.press("Meta+k");
   await page.waitForSelector(".palette input:focus");
   await page.keyboard.type("Ideen");
   await page.keyboard.press("Enter");
-  await expect(page.locator("#pfad")).toHaveAttribute("title", "10_notizen/Ideen.md");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "10_notizen/Ideen.md");
   await expect(page.locator('.cm-wiki[data-ziel="Neue Idee"]')).not.toHaveClass(/cm-wiki-fehlt/);
   // Klick öffnet die Notiz, ohne Hinweis „gibt es noch nicht“ und ohne zweite Datei
   await page.locator('.cm-wiki[data-ziel="Neue Idee"]').click();
-  await expect(page.locator("#pfad")).toHaveAttribute("title", "10_notizen/neue-idee.md");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "10_notizen/neue-idee.md");
   await expect(page.locator("#toast-host .toast", { hasText: "gibt es noch nicht" })).toHaveCount(0);
   expect(readdirSync(join(vault, "10_notizen")).filter((n) => n.startsWith("neue-idee"))).toEqual(["neue-idee.md"]);
 });
@@ -58,7 +58,7 @@ test("K1: eine Notiz mit anderem Dateinamen wird über Titel und Alias gefunden 
   expect(offen).toEqual(["Gibt es nicht"]);
   // Rückverweise der Zielseite kommen aus derselben Auflösung der Werkstatt
   await page.locator('.cm-wiki[data-ziel="So funktioniert dein Vault"]').click();
-  await expect(page.locator("#pfad")).toHaveAttribute("title", "10_notizen/thema_so-funktioniert.md");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "10_notizen/thema_so-funktioniert.md");
   await expect(page.locator('[data-sektion="rueck"] [data-ziel="10_notizen/Links.md"]')).toBeVisible({ timeout: 5000 });
 });
 
@@ -68,7 +68,7 @@ test("Anlegen eines Ziels, das es nach der Regel schon gibt: die Werkstatt öffn
   schreib("10_notizen/versteckt.md", "# Neue Idee\n\nvon außen\n");
   await page.locator('.cm-wiki[data-ziel="Neue Idee"]').click();
   await page.locator("#toast-host .toast a", { hasText: "Anlegen" }).click().catch(() => {}); // war der Index schon frisch, ist der Link zu und es gibt keinen Anlegen-Knopf
-  await expect(page.locator("#pfad")).toHaveAttribute("title", "10_notizen/versteckt.md");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "10_notizen/versteckt.md");
   expect(readdirSync(join(vault, "10_notizen")).filter((n) => n.startsWith("neue-idee"))).toEqual([]);
 });
 
@@ -237,7 +237,7 @@ test("S1: der Hinweis neben „Schnell erfassen“ zeigt das Kürzel aus dem Reg
   await page.waitForSelector("[data-karte], [data-leer]", { timeout: 10000 });
   const hinweis = page.locator("#fuss-merken .erfassen-taste");
   await expect(hinweis).toHaveText("⌃⌥ Leertaste");
-  await expect(page.locator("#fuss-merken")).toHaveAttribute("title", /⌃⌥Leertaste/);
+  await expect(page.locator("#fuss-merken")).toHaveAttribute("data-tipp-text", /⌃⌥Leertaste/);
   await page.evaluate(async () => { const kz = await import("./tastenkuerzel.js"); await kz.schreibe({ werte: { "schnell-erfassen": "Ctrl+Alt+Shift+K" } }); });
   await expect(hinweis).toHaveText("⌃⌥⇧ K");
   await page.evaluate(async () => { const kz = await import("./tastenkuerzel.js"); await kz.schreibe({ werte: { "schnell-erfassen": null } }); });

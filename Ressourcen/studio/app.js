@@ -26,6 +26,7 @@ import { TN } from "./texte-fremd.js"; // „Nichts geht verloren“: Zusammenf�
 import { baueKonfliktAnsicht, baueVergleich } from "./fremd-ansicht.js";
 import { erzeugeJournal, entwurfSchluessel } from "./entwurf.js";
 import { starteLive, planeAus, kiHinweis, hebeHervor } from "./live.js";
+import { erzeugeVirtuelleListe } from "./liste-virtuell.js";
 import { erzeugeMitteilungen } from "./mitteilungen.js"; // P8a: Hinweise unten rechts zu Ereignissen des Aktivitätsprotokolls
 import { erzeugeErwaehnungen } from "./erwaehnungen.js"; // Runde 3d: ungelinkte Erwähnungen in der Info-Spalte
 import { erzeugeNeuigkeiten } from "./neuigkeiten.js";   // Runde 3d: Karte „Was ist neu“ im Posteingang
@@ -34,6 +35,7 @@ import { erzeugeGlocke } from "./glocke.js"; // P8b: Glocke in der Kopfzeile mit
 import { TG } from "./texte-glocke.js";
 import { baueKiZeile } from "./ki-zeile.js";
 import { ruhenetz, kantenInstallieren, tippsInstallieren, huepfe, fliege, blendeEin, klappeZu, ruhig, dauer } from "./bewegung.js"; // P4: Bewegung mit Bedeutung
+import { merkeFokus, gibFokus, fokusSobald, erzeugeBereiche, installiereEscStapel, sichtbar as istSichtbar } from "./tastatur.js"; // R4-3: Bereiche (F6), Esc-Stapel, Fokus zurückgeben
 import { windungLaden } from "./windung.js";
 import { erzeugeDateiaktionen } from "./dateiaktionen.js"; // Umbenennen, Verschieben, Papierkorb
 import { erzeugeTags } from "./tags.js"; // Tags: Seitenleiste, Filter, Umbenennen
@@ -64,14 +66,14 @@ const S = {
   typen: [], typMap: new Map(), ansichten: [], ansichtMitglieder: {}, ansichtAusApi: false,
   sicht: { art: "bereich", id: "alle" }, vorVerlauf: null,
   sortierung: "geaendert",
-  sichtListe: [], gerendert: 0,
+  sichtListe: [],
   offen: new Set(), zu: new Set(), favoriten: new Set(),
   pfad: null, hash: null, schutz: false, dirty: false, konflikt: null, speichert: false, nochmal: false, bearbeitbar: true,
   basis: null, fremdOffen: false, entwurfAngebot: null, dienstWeg: false, autoOffen: false, // basis = Text der Datei, auf dem der Editor aufbaut (Grundlage der Zusammenführung)
   pruef: new Map(), aktuellePruefung: null,
   git: null, offline: false, gesundheit: null, rueckfragen: null, syncLaeuft: false, syncFehler: null, ki: null, kiGeladen: false, kiVerbunden: false,
   zuletzt: [], suche: { aktiv: false, treffer: [], auswahl: 0, frage: "", ergebnis: null },
-  infoAn: leseLokal("infoAn", true), roh: leseLokal("roh", false), breit: false, theme: "system", modus: "hell", darst: null,
+  infoAn: leseLokal("infoAn", true), seiteAus: leseLokal("seiteAus", false) === true, roh: leseLokal("roh", false), breit: false, theme: "system", modus: "hell", darst: null,
   ladeNr: 0, bereit: false,
   umstellung: null,                          // P7c: { altlasten, umgestellt, angefangen } oder null (alter Werkzeug-Ordner im Vault und Stand der Umstellung)
   zeigeZurueckgestellt: false,               // Posteingang: false = offene Notizen, true = die mit „Später“ zurückgestellten
@@ -166,6 +168,7 @@ $("knopf-verlauf").replaceChildren(symbol("uhr", 16)); $("knopf-verlauf").title 
 $("knopf-info").replaceChildren(symbol("seitenleiste", 16)); $("knopf-info").title = T.werkzeuge.eigenschaften; $("knopf-info").setAttribute("aria-label", T.eigenschaften.titel);
 $("knopf-verlauf").addEventListener("click", () => oeffneVerlauf());
 $("knopf-info").addEventListener("click", () => umschalteInfo());
+$("knopf-seite").replaceChildren(symbol("seitenleiste", 16)); $("knopf-seite").addEventListener("click", () => umschalteSeite());
 $("kopf-suche").addEventListener("click", () => oeffnePalette());
 $("knopf-suche").replaceChildren(symbol("suche", 16));
 $("knopf-neu").replaceChildren(symbol("plus", 16));
@@ -411,6 +414,7 @@ async function legeWikiZielAn(ziel) {
 // zeile (+ spalte, laenge, begriffe): Sprung an die Fundstelle aus der Suche; die gesuchten Wörter werden im Text markiert (editor.js springeZu)
 async function oeffne(pfad, { zeile, spalte, laenge, begriffe, ausListe, ausBoard, verlauf: ausVerlauf = false, zustand = null, beiFehlt = null } = {}) {
   const fund = begriffe || laenge ? { spalte, laenge, begriffe } : undefined;
+  if (!ausListe) listenZiel = null; // anderer Weg (Baum, Palette, Link): das Ziel der Pfeiltasten gilt nicht mehr
   if (konfliktInst) { if (konfliktInst.laeuft()) return false; await schliesseKonflikt(konfliktInst.istFertig() ? "fertig" : "liste"); }
   if (pfad === S.pfad) { schliesseDiff(); if (zeile) ed.springeZu(zeile, fund); else if (!ausListe) ed.fokus(); return true; }
   if (S.konflikt) { toast(`Löse zuerst den Konflikt in „${ohneEndung(dateiName(S.pfad))}“.`, { fehler: true }); return false; }
@@ -1349,15 +1353,8 @@ function baueKarte(n) {
   if (!n.generiert) da.ziehbar(karte, "datei", n.pfad);
   return typ ? setzeTypFarbe(karte, typ) : karte;
 }
-const CHUNK = 40; // klein genug, dass das Nachladen beim Scrollen kein Bild über 25 ms kostet (5.000 Notizen: gemessen in bewegung.spec.mjs)
-function rendereMehr(bis) {
-  const host = $("liste-koerper");
-  const ziel = Math.min(S.sichtListe.length, bis ?? S.gerendert + CHUNK);
-  const frag = document.createDocumentFragment();
-  for (let i = S.gerendert; i < ziel; i++) frag.append(baueKarte(S.sichtListe[i]));
-  host.append(frag);
-  S.gerendert = ziel;
-}
+// Virtuelle Liste (liste-virtuell.js): nur die sichtbaren Karten plus Puffer stehen im DOM, der Rest ist Platzhalter; Höhen werden gemessen (R4-5)
+const virt = erzeugeVirtuelleListe({ host: $("liste-koerper") });
 // Neue Einträge blenden ein, gelöschte klappen zu (P4). Nur beim Neuzeichnen derselben Sicht: ein Wechsel der Sicht zeigt alles ohne Einzelanimation (weicherWechsel).
 // Die alten Karten werden vor dem Neuzeichnen gemerkt (mit Höhe); eine verschwundene bleibt als stille Hülle (ohne data-karte, ohne Rolle) an ihrer Stelle und klappt zu.
 const sichtSchluessel = () => JSON.stringify([S.info?.vault || "", S.sicht, S.zeigeZurueckgestellt, S.sortierung]);
@@ -1367,8 +1364,8 @@ function merkeKarten(host) {
   const alt = [...host.querySelectorAll(":scope > [data-karte]")];
   return alt.length ? alt.map((el) => ({ el, pfad: el.dataset.pfad, hoehe: el.offsetHeight })) : null;
 }
-function listenUebergang(host, alt) {
-  const jetzt = new Set(S.sichtListe.map((n) => n.pfad)), vorher = new Set(alt.map((a) => a.pfad));
+function listenUebergang(host, alt, vorherAlle) {
+  const jetzt = new Set(S.sichtListe.map((n) => n.pfad)), vorher = vorherAlle || new Set(alt.map((a) => a.pfad)); // vorherAlle: die ganze alte Liste, nicht nur der gezeichnete Teil
   const karten = new Map([...host.querySelectorAll(":scope > [data-karte]")].map((el) => [el.dataset.pfad, el]));
   let i = 0;
   for (const [pfad, el] of karten) if (!vorher.has(pfad)) blendeEin(el, Math.min(i++, 6) * 30);
@@ -1378,7 +1375,7 @@ function listenUebergang(host, alt) {
     for (const at of ["data-karte", "data-pfad", "role", "aria-selected", "title", "tabindex"]) a.el.removeAttribute(at);
     a.el.inert = true; huelle.append(a.el);
     const danach = alt.slice(idx + 1).map((x) => karten.get(x.pfad)).find(Boolean);
-    if (danach) host.insertBefore(huelle, danach); else host.append(huelle);
+    if (danach) host.insertBefore(huelle, danach); else if (virt.bisEnde()) host.insertBefore(huelle, virt.untenEl); else return; // ohne gezeichneten Nachbarn: nur am Listenende sichtbar, sonst ohne Einzelanimation
     klappeZu(huelle, a.hoehe);
   });
 }
@@ -1392,12 +1389,13 @@ function zeichneListe({ behalte = false } = {}) {
   pkKi.laden(); // KI-Status früh holen: die Leiste im Posteingang ist dann sofort da oder nie, ohne die Liste zu verschieben
   if (S.sicht.art === "verlauf") { listeSchluessel = null; zeichneVerlauf(); return; }
   verlaufInst?.zerstoere?.(); verlaufInst = null;
+  const vorherAlle = listeSchluessel === sichtSchluessel() && S.sichtListe.length ? new Set(S.sichtListe.map((n) => n.pfad)) : null;
+  virt.stopp();
   if (S.suche.aktiv) { listeSchluessel = null; zeichneSuchergebnisse(); return; }
   if (S.sicht.art === "bereich" && S.sicht.id === "rueckfragen") { listeSchluessel = null; zeichneRueckfragenKarte(); return; }
   if (S.sicht.art === "bereich" && S.sicht.id === "papierkorb") { listeSchluessel = null; S.sichtListe = []; da.zeichnePapierkorb(host); return; }
   if (istAufgabenSicht()) { listeSchluessel = null; S.sichtListe = []; zeichneAufgaben(); return; }
   S.sichtListe = sortiere(sichtNotizen());
-  S.gerendert = 0;
   const alt = merkeKarten(host);
   listeSchluessel = sichtSchluessel();
   host.replaceChildren();
@@ -1405,29 +1403,24 @@ function zeichneListe({ behalte = false } = {}) {
   if (leiste) host.append(leiste);
   if (S.sicht.art === "bereich" && S.sicht.id === "inbox") { host.append(neuKarte.knoten); neuKarte.lade(); host.append(pkKi.leiste); pkKi.laden(); } // „Was ist neu“ ganz oben im Posteingang, darunter die Leiste „Für alle“
   if (!S.sichtListe.length) { pkKi.aktualisiere(); host.append(S.zeigeZurueckgestellt ? h("div", { klasse: "leer-liste", "data-leer": "zurueckgestellt" }, h("p", { text: T.posteingang.leerZurueckgestellt })) : leerZustand()); return; }
-  const bisAuswahl = S.pfad ? S.sichtListe.findIndex((n) => n.pfad === S.pfad) : -1;
-  rendereMehr(Math.max(CHUNK, scroll ? Math.ceil((scroll + host.clientHeight) / 90) + 20 : 0, bisAuswahl >= 0 ? bisAuswahl + 5 : 0));
-  host.scrollTop = scroll;
-  if (alt) listenUebergang(host, alt);
+  virt.setze({ anzahl: S.sichtListe.length, schluessel: (i) => S.sichtListe[i].pfad, baue: (i) => baueKarte(S.sichtListe[i]), scroll, beiFokusVerlust: () => { if (da.bearbeitet()) da.bricheInlineAb(); } });
+  if (alt) listenUebergang(host, alt, vorherAlle);
   if (S.sicht.art === "bereich" && S.sicht.id === "inbox") pkKi.aktualisiere();
 }
-$("liste-koerper").addEventListener("scroll", (e) => {
-  const el = e.currentTarget;
-  if (S.gerendert < S.sichtListe.length && el.scrollTop + el.clientHeight > el.scrollHeight - 700 && !S.suche.aktiv && S.sicht.art !== "verlauf") rendereMehr();
-}, { passive: true });
 function markiereAuswahl() {
   const host = $("liste-koerper");
   let gefunden = null;
   host.querySelectorAll("[data-karte]").forEach((k) => { const an = k.dataset.pfad === S.pfad; k.setAttribute("aria-selected", String(an)); if (an) gefunden = k; });
-  if (!gefunden && S.pfad && !S.suche.aktiv && S.sicht.art !== "verlauf") {
+  if (!gefunden && S.pfad && !S.suche.aktiv && S.sicht.art !== "verlauf" && virt.aktiv()) {
     const i = S.sichtListe.findIndex((n) => n.pfad === S.pfad);
-    if (i >= S.gerendert) { rendereMehr(i + 10); gefunden = host.querySelector(`[data-karte][data-pfad="${CSS.escape(S.pfad)}"]`); if (gefunden) gefunden.setAttribute("aria-selected", "true"); }
+    if (i >= 0) { gefunden = virt.zeige(i); gefunden?.setAttribute("aria-selected", "true"); return; }
   }
   gefunden?.scrollIntoView({ block: "nearest" });
 }
-let listenTimer = null;
+let listenTimer = null, listenZiel = null; // listenZiel: die gewählte, noch nicht geöffnete Karte (Pfeiltasten schneller als die Entprellung: sonst rechnet jeder Tastendruck vom alten Stand)
 function oeffneAusListe(pfad) {
   clearTimeout(listenTimer);
+  listenZiel = { pfad, bis: Date.now() + 1500 }; // bleibt gültig, bis die Notiz offen ist (oeffne ist asynchron), höchstens 1,5 s
   listenTimer = setTimeout(() => oeffne(pfad, { ausListe: true }), 40);
   host_fokus();
 }
@@ -1440,11 +1433,11 @@ $("liste-koerper").addEventListener("keydown", (e) => {
   if (!liste.length) return;
   e.preventDefault();
   if (e.key === "Enter") { if (S.pfad) ed.fokus(); return; }
-  let i = liste.findIndex((n) => n.pfad === S.pfad);
+  let i = liste.findIndex((n) => n.pfad === (listenZiel && listenZiel.bis > Date.now() && listenZiel.pfad !== S.pfad ? listenZiel.pfad : S.pfad));
   i = e.key === "Home" ? 0 : e.key === "End" ? liste.length - 1 : e.key === "ArrowDown" ? Math.min(liste.length - 1, i + 1) : Math.max(0, i < 0 ? 0 : i - 1);
-  if (i >= S.gerendert && !S.suche.aktiv) rendereMehr(i + 20);
   const p = liste[i].pfad;
   oeffneAusListe(p);
+  if (!S.suche.aktiv && virt.aktiv()) virt.zeige(i);
   const k = $("liste-koerper").querySelector(`[data-karte][data-pfad="${CSS.escape(p)}"]`);
   $("liste-koerper").querySelectorAll("[data-karte]").forEach((x) => x.setAttribute("aria-selected", String(x === k)));
   k?.scrollIntoView({ block: "nearest" });
@@ -1689,8 +1682,10 @@ async function zeichneVerlauf() {
 function oeffneVerlauf() {
   if (S.sicht.art === "verlauf") { schliesseVerlauf(); return; }
   S.vorVerlauf = S.sicht;
+  merkeFokus("verlauf");
   waehleSicht({ art: "verlauf" }, { merken: false });
   zeichneStatus();
+  fokusSobald(".vl-zeile", $("liste-koerper"), { ersatz: $("liste-koerper") }); // der Verlauf lädt nach: der Fokus geht auf die erste Fassung
 }
 function schliesseVerlauf() {
   schliesseDiff();
@@ -1698,6 +1693,7 @@ function schliesseVerlauf() {
   S.vorVerlauf = null;
   waehleSicht(zurueck);
   zeichneStatus();
+  gibFokus("verlauf", $("knopf-verlauf"));
 }
 let diffInst = null;
 async function zeigeDiff(d) {
@@ -2758,6 +2754,8 @@ function oeffnePalette(vorgabe = "") {
     [TF.befehl, kz.anzeige("frage"), () => frage.oeffne()], [T.befehle.suche, kz.anzeige("suche-vault"), fokusSuche], [T.befehle.inNotiz, kz.anzeige("suche-notiz"), () => ed.suchen()], [T.befehle.info, kz.anzeige("info"), umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.befehle.posteingang, kz.anzeige("gehe-posteingang"), () => waehleSicht({ art: "bereich", id: "inbox" })], [T.befehle.alleNotizen, kz.anzeige("gehe-alle"), () => waehleSicht({ art: "bereich", id: "alle" })], [T.befehle.aufgaben, kz.anzeige("gehe-aufgaben"), () => waehleSicht({ art: "bereich", id: "aufgaben" })],
     [T.liste.verlauf, kz.anzeige("verlauf"), oeffneVerlauf], [TG.titel, kz.anzeige("mitteilungen"), () => glocke.oeffne()],
+    ...[["seitenleiste-links", umschalteSeite], ["hell-dunkel", () => fuehreBefehlAus("hell-dunkel")], ["region-weiter", () => bereiche.weiter(1)], ["region-zurueck", () => bereiche.weiter(-1)], ["kuerzel-hilfe", oeffneKuerzel]]
+      .map(([id, tun]) => [kz.REGISTER.befehle.find((bf) => bf.id === id).name, kz.anzeige(id), tun]),
     ...(S.pfad && S.bearbeitbar ? [["tabelle-einfuegen", () => ed.fuegeTabelleEin()], ...FORMAT_BEFEHLE.map(([id, name]) => [id, () => ed.formatiere(name)])].map(([id, tun]) => [kz.REGISTER.befehle.find((b) => b.id === id).name, kz.anzeige(id), () => { ed.fokus(); tun(); }]) : []),
     ...(S.pfad && S.bearbeitbar ? kiTextRef.paletteBefehle() : []), // KI-Aktionen, solange im Editor Text markiert ist
     ...(kannOrdnerZeigen() ? [[ordnerBefehlName(), "", () => aktion("ordner-zeigen", S.pfad || undefined)]] : []),
@@ -2891,6 +2889,18 @@ function umschalteInfo() {
   if (frage.istOffen()) { frage.schliesse(); S.infoAn = true; S.infoErzwungen = !!S.infoEng; speichereLokal("infoAn", true); glatt(() => begrenzeBreiten()); return; }
   glatt(() => umschalteInfoInnen());
 }
+// Linke Seitenleiste ein- und ausblenden (R4-3, ⌃⌘S und der Knopf ganz links in der Kopfzeile). Aus: die Spalte hat 0 px und ist für die Tastatur nicht erreichbar; der Fokus geht in die Liste.
+function umschalteSeite() {
+  const warDrin = $("seite").contains(document.activeElement);
+  glatt(() => { S.seiteAus = !S.seiteAus; speichereLokal("seiteAus", S.seiteAus); begrenzeBreiten(); });
+  if (S.seiteAus && warDrin) $("liste-koerper").focus({ preventScroll: true });
+  zeichneSeiteKnopf();
+}
+function zeichneSeiteKnopf() {
+  const k = $("knopf-seite"); if (!k) return;
+  const text = `${S.seiteAus ? T.kopf.seiteEin : T.kopf.seiteAus} (${kz.anzeige("seitenleiste-links")})`;
+  k.title = text; k.setAttribute("aria-label", S.seiteAus ? T.kopf.seiteEin : T.kopf.seiteAus);
+}
 function umschalteInfoInnen() {
   if (infoSichtbar()) { S.infoAn = false; S.infoErzwungen = false; }
   else { S.infoAn = true; S.infoErzwungen = !!S.infoEng; }
@@ -2911,7 +2921,7 @@ const E = { ...W }; // tatsächliche Breiten, wenn das Fenster nicht für alle W
 const EDITOR_MIN = 420, EDITOR_MIN_MIT_INFO = 560, EDITOR_MIN_MIT_FRAGE = 400;
 function wendeBreitenAn() {
   const app = $("app");
-  app.style.setProperty("--b-seite", E.seite + "px"); app.style.setProperty("--b-liste", E.liste + "px"); app.style.setProperty("--b-info-voll", E.info + "px"); app.style.setProperty("--b-frage", E.frage + "px");
+  app.style.setProperty("--b-seite", (S.seiteAus ? 0 : E.seite) + "px"); app.style.setProperty("--b-liste", E.liste + "px"); app.style.setProperty("--b-info-voll", E.info + "px"); app.style.setProperty("--b-frage", E.frage + "px");
 }
 // Öffnen und Schließen der rechten Spalte gleiten (280 ms, frage.css/studio.css); beim Ziehen und Verkleinern des Fensters nicht — das soll der Hand folgen.
 let glattTimer = null;
@@ -2929,16 +2939,18 @@ function begrenzeBreiten() {
   if (!S.infoEng) S.infoErzwungen = false;
   const zeige = infoSichtbar();
   Object.assign(E, W);
-  let uebrig = window.innerWidth - E.seite - E.liste - (zeige ? E.info : 0) - (zeige && !S.infoErzwungen ? EDITOR_MIN_MIT_INFO : EDITOR_MIN);
+  let uebrig = window.innerWidth - (S.seiteAus ? 0 : E.seite) - E.liste - (zeige ? E.info : 0) - (zeige && !S.infoErzwungen ? EDITOR_MIN_MIT_INFO : EDITOR_MIN);
   for (const n of zeige ? ["info", "liste", "seite"] : ["liste", "seite"]) {
     if (uebrig >= 0) break;
     const nimm = Math.min(E[n] - GRENZEN[n][0], -uebrig); E[n] -= nimm; uebrig += nimm;
   }
   $("app").dataset.info = zeige ? "an" : "aus";
+  $("app").dataset.seite = S.seiteAus ? "aus" : "an";
+  $("knopf-seite")?.setAttribute("aria-pressed", String(!S.seiteAus));
   $("knopf-info")?.setAttribute("aria-pressed", String(zeige && !S.frageAn));
   // „Frag deinen Vault“ nimmt den Platz der Eigenschaften und schiebt den Editor beiseite, wenn er danach noch mindestens 400 px hat; sonst liegt das Panel darüber
   if (S.frageAn) {
-    const schiebt = window.innerWidth - E.seite - E.liste - E.frage >= EDITOR_MIN_MIT_FRAGE;
+    const schiebt = window.innerWidth - (S.seiteAus ? 0 : E.seite) - E.liste - E.frage >= EDITOR_MIN_MIT_FRAGE;
     $("app").dataset.frageModus = schiebt ? "schiebt" : "deckt";
   } else delete $("app").dataset.frageModus;
   wendeBreitenAn();
@@ -2974,9 +2986,12 @@ function richteGriffeEin() {
 function oeffneKuerzel() {
   if (dialogOffen()) return;
   const K = T.kuerzel;
+  // Alle Befehle des Registers nach Gruppen (gezeigt wird das gerade gültige Kürzel; ohne Kürzel entfällt die Zeile), dann die festen Tasten (Liste, Seitenleiste, Board)
+  const aus = kz.REGISTER.gruppen.map((g) => ({ name: g.name, zeilen: kz.REGISTER.befehle.filter((bf) => bf.gruppe === g.id && (bf.id !== "frage-global" && bf.id !== "kortex-zeigen")).map((bf) => [{ id: bf.id }, bf.name]) }));
+  const gruppen = [...aus.filter((g) => g.zeilen.length && !(g.name === "Überall auf dem Mac" && !inApp())), ...K.fest];
   const d = dialog({
     titel: K.titel, breit: true,
-    rumpf: [h("div", { klasse: "kuerzel" }, ...K.gruppen.map((g) => h("section", null, h("h3", { text: g.name }),
+    rumpf: [h("div", { klasse: "kuerzel" }, ...gruppen.map((g) => h("section", null, h("h3", { text: g.name }),
       h("dl", null, ...g.zeilen.map(([tasten, was]) => [typeof tasten === "string" ? tasten : kz.anzeigeTeile(tasten.id).join(" "), was]).filter(([tasten]) => tasten).flatMap(([tasten, was]) => [h("dt", null, ...tasten.split(" ").map((x) => h("kbd", { text: x }))), h("dd", { text: was })])))))],
     knoepfe: [baueKnopf({ text: K.anpassen, aktion: "kuerzel-anpassen", aufKlick: () => { d.schliessen(); setTimeout(() => oeffneEinstellungenSeite({ bereich: "tasten" }), 0); } }),
       baueKnopf({ text: K.schliessen, variante: "primaer", aufKlick: () => d.schliessen() })],
@@ -3003,6 +3018,7 @@ kz.anmelden("suche-vault", () => fokusSuche());
 kz.anmelden("suche-notiz", () => ed.suchen(), (e) => !dialogOffen() && !!S.pfad && !e.target.closest?.("input, textarea, select"));
 kz.anmelden("info", () => umschalteInfo());
 kz.anmelden("seitenleiste", () => umschalteInfo(), () => !!S.info?.vault); // ⌘\ (P3): dieselbe rechte Spalte wie „info“, der Knopf neben „Frag“
+kz.anmelden("seitenleiste-links", () => umschalteSeite(), () => !!S.info?.vault);
 kz.anmelden("commit", () => oeffneCommit());
 kz.anmelden("kuerzel-hilfe", () => oeffneKuerzel());
 // Formatieren, Tabelle, Einfügen (Runde 3b): gelten nur, wenn der Editor (oder eine Tabellenzelle) den Fokus hat
@@ -3011,6 +3027,27 @@ for (const [id, name] of FORMAT_BEFEHLE) kz.anmelden(id, () => ed.formatiere(nam
 kz.anmelden("tabelle-einfuegen", () => ed.fuegeTabelleEin(), imEditor);
 kz.anmelden("einfuegen-text", () => ed.einfuegenAlsText(), imEditor);
 kz.anmelden("mitteilungen", () => glocke.umschalten(), () => !!S.info?.vault && !dialogOffen());
+// Bereiche (R4-3): F6 / ⇧F6 springt Seitenleiste → Liste → Editor (oder Board) → Eigenschaften oder Frag-Spalte; ausgeblendete Bereiche werden übersprungen
+const bereiche = erzeugeBereiche([
+  { id: "seite", wurzel: () => $("seite"), fokus: () => ($("seite").querySelector('[aria-current="true"]') || $("seite").querySelector("#bereiche button, #bereiche a, .eintrag") || $("seite").querySelector("button"))?.focus({ preventScroll: true }) },
+  { id: "liste", wurzel: () => $("liste"), fokus: () => $("liste-koerper").focus({ preventScroll: true }) },
+  { id: "haupt", wurzel: () => (istAufgabenSicht() && !S.aufgabeDatei ? $("aufgaben-host") : $("haupt")),
+    fokus: () => { if (istAufgabenSicht() && !S.aufgabeDatei) ($("aufgaben-host").querySelector("[data-karte-aufgabe]") || $("aufgaben-host").querySelector("button, input"))?.focus({ preventScroll: true }); else if (S.pfad) ed.fokus(); else ($("haupt").querySelector("button, [tabindex]") || $("haupt"))?.focus({ preventScroll: true }); } },
+  { id: "rechts", wurzel: () => (frage.istOffen() ? $("frage") : infoSichtbar() ? $("info") : null),
+    fokus: () => { const w = frage.istOffen() ? $("frage") : $("info"); (w.querySelector("textarea, button:not([disabled]), input, [tabindex]:not([tabindex='-1'])") || (w.tabIndex = -1, w))?.focus({ preventScroll: true }); } },
+]);
+kz.anmelden("region-weiter", () => bereiche.weiter(1), () => !!S.info?.vault && !dialogOffen());
+kz.anmelden("region-zurueck", () => bereiche.weiter(-1), () => !!S.info?.vault && !dialogOffen());
+// Esc als EIN Stapel (R4-3, tastatur.js): Popover/Menü und Dialog schließen sich selbst zuerst; dann Format-Leiste → Panels (Verlauf, Frag) → Suche → Textauswahl.
+// Jede Schicht schließt genau sich und gibt den Fokus an den Auslöser zurück.
+const textAuswahlOffen = () => { try { return !!S.pfad && ed.editorHatFokus() && !ed.view.state.selection.main.empty; } catch { return false; } };
+installiereEscStapel([
+  { id: "format-leiste", offen: () => !!document.querySelector('.format-leiste[data-offen="ja"]') && textAuswahlOffen(), zu: () => { const v = ed.view; v.dispatch({ selection: { anchor: v.state.selection.main.head } }); } },
+  { id: "verlauf", offen: () => S.sicht.art === "verlauf", zu: () => schliesseVerlauf() },
+  { id: "frage", offen: () => frage.istOffen(), zu: () => (frage.laeuft() ? frage.abbrechen() : frage.schliesse()) },
+  { id: "suche", offen: () => S.suche.aktiv, zu: () => { schliesseSuche(); $("liste-koerper").focus({ preventScroll: true }); } },
+  { id: "auswahl", offen: () => textAuswahlOffen(), zu: () => { const v = ed.view; v.dispatch({ selection: { anchor: v.state.selection.main.head } }); } },
+], { gesperrt: () => einstOffen() || document.body.dataset.einrichtung === "offen" });
 
 window.addEventListener("beforeunload", () => { if (S.dirty) { clearTimeout(speicherTimer); speichere(); } });
 window.addEventListener("focus", () => { planeGitRefresh(); if (S.info?.vault) { ladeBaum(); ladeInfoLeise().then(() => fragVertrauenEinmal()); einrichtungsListe?.aktualisiere(); } });
@@ -3387,7 +3424,7 @@ function zuruecksetzen() {
   schreiben.zuruecksetzen(); // Zurück/Vor gehört zum alten Vault
   S.notizen = []; S.nMap = new Map(); S.baum = []; S.eintraege = new Map(); S.git = null; S.gesundheit = null; S.rueckfragen = null; S.syncFehler = null; S.ki = null;
   S.suche = { aktiv: false, treffer: [], auswahl: 0, frage: "" }; S.vorVerlauf = null;
-  S.sichtListe = []; S.gerendert = 0;
+  S.sichtListe = []; virt.stopp();
   ed.setzeText("", { nurLesen: false });
   schliesseDialoge(); // offene Dialoge (Vertrauen, Sichern, Neue Notiz …) gehören zum alten Vault; für den neuen fragt ladeAlles selbst
   neuKarte.vergiss(); // eine KI-Zusammenfassung gehört zum alten Vault

@@ -220,3 +220,46 @@ Abschluss der Runde: Vorschau für den Nutzer neu starten (hell, dunkel, großer
 - **Tabelle und Bild beim Hineinlaufen mit den Pfeiltasten** zeigen den Quelltext: Tabelle −20 px (3 Zeilen statt Gitter), Bild +37,8 px (Rohzeile + Bild). Das ist die Quelltext-Bearbeitung dieser Blöcke, kein Layoutfehler; wer sie bedient (Zelle, Klick auf das Bild), sieht keinen Sprung. Die Spec protokolliert die Werte. Wollen wir 0 px auch dort, braucht es einen anderen Weg (Fokus in die erste Zelle statt Quelltext; Rohzeile als Überlagerung des Bildes) – Vorschlag für R4-2.
 - **Datei-Kopf (Front Matter):** der zugeklappte Kopf ist ein atomares Kästchen und öffnet nur durch ausdrückliche Handlung (Klick); Pfeiltasten springen darüber. Kein Cursor-Eintritt, daher nicht in der Messreihe.
 - Die Mac-App und der Browser-Modus teilen sich dieselben Dateien; der neue Schalter steht im Schema (`app-einstellungen.mjs`), Swift muss nichts wissen.
+
+## Stand R4-5 (Große Vaults ohne Ruckeln)
+
+**Gebaut** (Branch `feat/r4-grosse-vaults`):
+- **Virtuelle Notizliste** (`Ressourcen/studio/liste-virtuell.js`, Einhängung in `app.js`: `zeichneListe`, `markiereAuswahl`, Pfeiltasten): nur sichtbare Karten ± 700 px im DOM, Platzhalter oben/unten tragen den Rest. Kartenhöhen werden gemessen (je Pfad gemerkt, `ResizeObserver`), Ungemessene zählen 92 px; der oberste sichtbare Eintrag bleibt beim Messen und Nachzeichnen an derselben Stelle (Ankerkorrektur, kein Sprung). Auswahl, `scrollIntoView`, Pfeiltasten/Pos1/Ende, Live-Aktualisierung (`behalte`), Übergänge (`listenUebergang`, nur noch für wirklich neue/entfernte Einträge der ganzen Liste) und Umbenennen an Ort und Stelle (Karte mit Fokus bleibt gezeichnet) sind erhalten; Karten tragen `aria-setsize`/`aria-posinset`. `content-visibility` entfällt (Karten werden gemessen).
+- **Pfeiltasten-Fehler behoben:** schneller als die 40-ms-Entprellung rechnete jeder Tastendruck vom alten Stand (Halten der Taste bewegte nur eine Karte).
+- **Schlanke Startdaten:** `/api/index`, `/api/notizen`, `/api/teilindex` mit `kompakt` (Studio nutzt es): ohne `links`, Vorschau auf 160 Zeichen; ohne den Schalter bleibt der Vertrag unverändert (`Tests/Node/index-kompakt.test.mjs`).
+- **„Was ist neu“:** die 2,3 s kamen daher, dass `/api/ki/vorschlag/lokal` die Werkstatt ~2 s blockierte (Pool, Ordner und Titel-Index wurden je Eintrag für alle 5 000 Notizen neu berechnet); jetzt einmal je Anfrage (`ki-vorschlag.mjs: lokalerPool`), 2,1 s → 0,7 s.
+- **Riesen-Absatz** (`Ressourcen/studio/editor-lange-absaetze.js`, eine Zeile in `editor.js`): im Syntaxbaum endet ein Absatz nach 8 000 Zeichen (Text unverändert), ab 20 000 Zeichen in einem Absatz gelten Klammern als gewöhnlicher Text (kein quadratisches `LinkEnd`).
+- Tests: `Tests/Oberflaeche/grosse-vaults.spec.mjs` (DOM-Grenze, Scrollen bis zum Ende, Frame-Zeiten, Pfeiltasten über Seiten, keine Sprünge ≤ 1,5 px über 220 Schritte rauf/runter, Live, Riesen-Absatz; Zeitgrenzen auf Windows nur Log), `Tests/Node/index-kompakt.test.mjs`; `scripts/messe-grosse-vaults.mjs --ui` misst zusätzlich Startdaten, Liste, „Was ist neu“ und Riesen-Absatz (`--alt <Ordner>` für „vorher“).
+
+**Messwerte** (Chromium headless, Entwicklungsrechner; „vorher“ = `origin/main`):
+
+| Messung | vorher (5 052) | nachher (5 000) | nachher (20 000) | Ziel |
+|---|---:|---:|---:|---|
+| DOM-Knoten der Liste nach Scrollen bis zum Ende | 71 744 (5 053 Karten) | 242–366 (17–26 Karten) | 296 (21 Karten) | ≤ 3 000 ✔ |
+| Bild beim Scrollen p95 | 16,8 ms | 16,7 ms | 16,8 ms (größtes 33 ms) | ≤ 17 ms ✔ |
+| Sprung beim Scrollen gegenüber Soll | – | 0,00 px (220 Schritte) | – | ≤ 1,5 px ✔ |
+| `/api/index` beim Start | 3,72 MB | 2,1 MB (eigener Vault) / 2,57 MB (Messvault, vorher 2,89) | 10,3 MB | ≤ 1 MB ✘ |
+| „Was ist neu“ im Posteingang | 0,3–2,3 s (Werkstatt blockiert durch `lokal` 2,1 s) | 0,31–0,37 s, `lokal` 0,74 s | 1,29 s (vorher 0,83 s) | ≤ 0,5 s (5 000 ✔, 20 000 ✘) |
+| 487-KB-Absatz: Öffnen | 4,3 s | 0,09–0,11 s | 0,25 s | ≤ 0,3 s ✔ |
+| 487-KB-Absatz: je Taste (Event-Dauer / 2 Bilder) | 144–272 ms | ≤ 16 ms / 32 ms (Boden ≈ 33) | 43 ms | ≤ 16 ms ✔ (5 000) |
+| Start bis erste Karte | 0,9–1,4 s | 1,0–1,45 s | 6,5 s (vorher 6,0 s) | ≤ 0,3 s ✘ |
+
+**Offen:**
+- Startdaten bleiben bei 20 000 Notizen ≈ 10 MB (Felder `felder`, `vorschau`, Pfad, zwei Zeitstempel je Zeile ≈ 500 B): Ziel „≤ 1 MB oder in Teilen“ nicht erreicht. Nächster Schritt wäre Laden in Teilen (erste 500 Zeilen sofort, Rest im Hintergrund; Zähler der Seitenleiste brauchen dann einen eigenen Weg) oder `felder` nur für gewünschte Schlüssel.
+- Start bis erste Karte (20 000: 6,5 s) und „Was ist neu“ (1,3 s) hängen an Aufbau und Aufbereitung des Index in der Werkstatt (Server), nicht an der Oberfläche; unberührt.
+- `messe-grosse-vaults.mjs --ui` läuft nicht im CI-Lauf (nur von Hand); „vorher“-Wert für Liste scrollen ist im Skript nicht belastbar (alte Liste wächst erst beim Scrollen), die Tabelle oben nutzt die Messung mit Mausrad-Schritten.
+- Review-Nachträge: Tabellen und Link-Definitionen werden nie geschnitten (Test mit dem Bündel); Karte mit Fokus/Umbenennung/Ziehen bleibt gezeichnet bzw. gibt den Fokus an die Liste ab; Vorschau kompakt endet mit „…“ an Wortgrenze; Ziel der Pfeiltasten gilt nur für Wege aus der Liste.
+- Der Schnitt langer Absätze wirkt nur im Syntaxbaum; ein `[Text](Adresse)`-Link in einem Absatz über 20 000 Zeichen verliert seine Auszeichnung.
+
+## Stand R4-3 (Tastatur, Fokus und Kontrast)
+
+Gebaut auf Branch `feat/r4-tastatur-fokus`. Fotos (Scratchpad der Sitzung): `r43-fokusring-hell.png`, `r43-fokusring-dunkel.png`, `r43-fokus-liste-hell.png`, `r43-fokus-liste-dunkel.png`, `r43-tooltip.png`, `r43-kuerzelhilfe.png`, `r43-frag-fokus.png`.
+
+- **Ein Fokusring:** `--fokus` (= Akzent, deckend) und `--fokus-ring` (1 px Papierspalt + 2 px Akzent) in `studio.css`; alle `outline: 2px solid var(--akzent)` bei `:focus-visible` sind weg (Ring per `box-shadow`, innen bei bündigen Zeilen). Test: Fokusring >= 3:1 gegen Papier, Seite, Karte, Hover und Auswahl in allen 7 x 9 Schema/Akzent-Kombinationen (`darstellung.spec.mjs`). Orange/Bernstein hell sind unverändert und erreichen die Grenzen.
+- **Kleiner Text:** Zweit- und Drittext >= 4,5:1 auf allen fünf Flächen (hell Standard Drittext `#6b6b6b`, Papier `#6a6053`, dunkel Standard `#939393`, Graphit `#a4a5aa`, Mitternacht `#9198b6`). Der Drittext unterscheidet sich damit kaum noch vom Zweittext; Symbole und Linien nehmen `--linie`/`--grau`. Fotos zeigen die dunklere Optik.
+- **Bereiche:** F6 / Umschalt+F6 (Seitenleiste, Liste, Editor oder Board, Info oder Frag); ausgeblendete Bereiche werden übersprungen. Linke Seitenleiste ein/aus mit Control+Command+S und Knopf links in der Kopfzeile (Zustand bleibt). Hell/Dunkel: Option+Command+L. Alle im Register, in Palette und Kürzelhilfe. Neu: F-Tasten brauchen keinen Umschalter (`brauchtUmschalter`).
+- **Esc als ein Stapel** (`tastatur.js`): Popover/Menü und Dialog schließen sich zuerst selbst, danach Format-Leiste, Verlauf, Frag, Suche, Textauswahl; jede Taste schließt genau eine Schicht, auch wenn der Fokus nicht im Panel liegt. Frag und Verlauf setzen den Fokus hinein (auch ohne KI-Konto) und geben ihn an den Auslöser zurück; Mitteilungen geben ihn an die Glocke zurück.
+- **Kürzelhilfe** erzeugt sich aus dem Register (alle Gruppen) plus feste Tasten (Liste, F2, Command+Rücktaste, Board).
+- **Tooltips:** `bewegung.js` nimmt jedes `title` (auch später gesetzte) weg und zeigt den eigenen Tooltip aus `data-tipp-text`; der zugängliche Name bleibt (`aria-label`). Test: in allen Hauptansichten kein sichtbares Element mit `title`. Ausnahmen: eigenständige Modulseiten der Tests ohne `app.js` (dort bleibt `title`), Menüeinträge (`.menue`, `.bs-liste`) zeigen keinen Tooltip.
+- **Tests:** neu `Tests/Oberflaeche/tastatur-fokus.spec.mjs` (F6-Reihenfolge, Seitenleiste, Hell/Dunkel, Esc-Matrix mit 8 Flächen, Stapelreihenfolge, Fokus-Rückgabe, Tab-Lauf mit sichtbarem Fokus, kein natives `title`); bestehende Specs auf `data-tipp-text` bzw. neue Werte umgestellt.
+- **Offen:** Command-Control-S/F6 auf Windows/Linux (Strg gilt dort als Command): im Register änderbar, nicht auf echter Hardware geprüft; Mac-Menüeintrag für die neuen Befehle fehlt (kein `menue`-Name, nur Studio); Orange/Bernstein hell weiter Entscheidung 2.

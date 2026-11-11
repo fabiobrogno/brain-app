@@ -35,7 +35,7 @@ const PRUEFER = () => {
   for (const [fg, bgs, min] of [
     ["--text", ["--papier", "--seite", "--erhoben", "--hover", "--auswahl"], 4.5],
     ["--text-2", ["--papier", "--seite", "--erhoben"], 4.5],
-    ["--text-3", ["--papier", "--seite", "--erhoben", "--hover"], 3],
+    ["--text-3", ["--papier", "--seite", "--erhoben", "--hover"], 4.5],
     ["--akzent", ["--papier", "--seite", "--erhoben"], 4.5],
     ["--akzent-text", ["--akzent"], 4.5],
     ["--akzent-tinte", ["--papier", "--seite"], 4.5],
@@ -45,13 +45,13 @@ const PRUEFER = () => {
   return erg;
 };
 
-for (const [schema, text3, papier] of [["light", "140,140,140", "255,255,255"], ["dark", "120,120,120", "10,10,10"]]) {
-  test(`Kontrast (${schema}): Text ≥ 4,5:1, Tertiärtext ≥ 3:1 auf allen Flächen`, async ({ page }) => {
+for (const [schema, text3, papier] of [["light", "107,107,107", "255,255,255"], ["dark", "147,147,147", "10,10,10"]]) {
+  test(`Kontrast (${schema}): Text ≥ 4,5:1, Tertiärtext ≥ 4,5:1 auf allen Flächen`, async ({ page }) => {
     await start(page, schema);
     const { kontrast, werte } = await page.evaluate(PRUEFER);
     const zu_schwach = Object.entries(kontrast).filter(([, k]) => k.ist < k.min).map(([n, k]) => `${n}: ${k.ist} < ${k.min}`);
     expect(zu_schwach).toEqual([]);
-    // die freigegebenen Werte aus dem Prototyp: Tertiärtext #8c8c8c (hell) / #787878 (dunkel), Papier #fff / #0a0a0a
+    // R4-3: Tertiärtext (kleiner Text) #6b6b6b (hell) / #939393 (dunkel) statt der Prototyp-Werte #8c8c8c / #787878; Papier #fff / #0a0a0a
     expect(werte["--text-3"]).toBe(text3);
     expect(werte["--papier"]).toBe(papier);
   });

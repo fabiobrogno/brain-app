@@ -3,7 +3,7 @@
 //   node scripts/messe-grosse-vaults.mjs [Anzahl …]      Standard: 5000 20000
 //   --ohne-repo                                              Vault ohne Git-Repository (Standard: mit Repository, wie bei echten Vaults)
 //   --json                                                  Ergebnis als JSON statt Markdown-Tabelle
-//   --ui [--alt <Ordner>]                                  zusätzlich ⌘K je Taste im Browser (Playwright aus Tests/Oberflaeche/node_modules, Chromium aus dem Playwright-Cache);
+//   --ui [--alt <Ordner>]                                  zusätzlich im Browser: Start, Startdaten, Liste bis zum Ende scrollen (DOM-Knoten, Bildzeiten), „Was ist neu“, 500-KB-Absatz (R4-5) und ⌘K je Taste (Playwright aus Tests/Oberflaeche/node_modules, Chromium aus dem Playwright-Cache);
 //                                                           --alt = Ordner einer älteren Fassung (mit Ressourcen/werkstatt und studio) für den Vorher-Wert
 //   --ohne-volltext                                        die Volltext-Messung (Index der Werkstatt) auslassen
 // Volltext (Suchindex): „vorher“ = bisherige suche() (liest bei jeder Anfrage alle Dateien, blockiert die Werkstatt); „nachher“ = Index im Speicher über /api/suche.
@@ -58,6 +58,11 @@ const git = (cwd, ...a) => execFileSync("git", a, { cwd, env: { ...process.env, 
 // ⌘K je Taste im Browser (Hauptthread): Palette öffnen, die Frage Buchstabe für Buchstabe eintragen, je Taste die Zeit des Eingabe-Handlers und bis zum nächsten Bild messen.
 // Eigene Werkstatt (entwicklung.mjs) mit eigenem Support-Ordner; der Browser kommt aus dem Playwright-Cache. ordner = Wurzel mit Ressourcen/werkstatt und studio.
 async function messeUi(vault) {
+  { // ein Absatz von 500 KB ohne Leerzeile (eingefügtes Protokoll mit vielen [[Links]]) für die Messung des Editors
+    const { writeFileSync: schreib, mkdirSync: mkd } = await import("node:fs");
+    let t = "# Riese-Absatz\n\n"; for (let i = 0; t.length < 500000; i++) t += `wort ${i} [[Seite ${i % 500}]] und mehr text hier\n`;
+    mkd(join(vault, "10_projekte"), { recursive: true }); schreib(join(vault, "10_projekte", "Riese-Absatz.md"), t + "\n");
+  }
   const { spawn } = await import("node:child_process");
   const { createRequire } = await import("node:module");
   const { existsSync, readdirSync, mkdtempSync: mk } = await import("node:fs");
@@ -73,11 +78,48 @@ async function messeUi(vault) {
     const browser = await pw.chromium.launch({ executablePath: exe });
     try {
       const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+      const bytes = {}; page.on("response", async (r) => { const u = new URL(r.url()).pathname; if (/^\/api\/(notizen|index|baum)$/.test(u)) { try { bytes[u] = (await r.body()).length; } catch { /* egal */ } } });
       await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "platform", { get: () => "MacIntel", configurable: true }));
       const start = Date.now();
       await page.goto(url);
       await page.waitForSelector("[data-karte], [data-leer]", { timeout: 180000 });
       const bisKarte = Date.now() - start;
+      // R4-5: Startdaten, „Was ist neu“, Liste bis zum Ende, Riesen-Absatz
+      await page.waitForTimeout(1500);
+      const liste = { startBytes: (bytes["/api/index"] || 0) + (bytes["/api/notizen"] || 0), baumBytes: bytes["/api/baum"] || 0, knotenStart: await page.evaluate(() => document.querySelector("#liste-koerper").getElementsByTagName("*").length) };
+      const tn = Date.now();
+      await page.click('[data-bereich="inbox"]');
+      try { await page.waitForFunction(() => { const z = document.querySelector("[data-nk-zusammen]"); return z && !/zusammengestellt/.test(z.textContent); }, null, { timeout: 30000 }); liste.wasIstNeuMs = Date.now() - tn; } catch { liste.wasIstNeuMs = null; }
+      await page.waitForTimeout(3500);
+      await page.click('[data-bereich="alle"]');
+      await page.waitForSelector("#liste-koerper [data-karte]");
+      await page.waitForTimeout(500);
+      Object.assign(liste, await page.evaluate(async () => {
+        const e = document.querySelector("#liste-koerper"), d = []; let l = performance.now(), n = 0;
+        const t0 = l;
+        await new Promise((res) => { const f = (t) => { d.push(t - l); l = t; e.scrollTop += 3000; if (e.scrollTop + e.clientHeight >= e.scrollHeight - 2 || ++n > 20000) res(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+        d.shift(); d.sort((a, b) => a - b);
+        return { scrollMs: performance.now() - t0, frameP95: d[Math.floor(d.length * 0.95)] || 0, frameMax: d[d.length - 1] || 0, knotenEnde: e.getElementsByTagName("*").length, karteneEnde: e.querySelectorAll("[data-karte]").length };
+      }));
+      await page.keyboard.press("Meta+k");
+      await page.keyboard.type("Riese-Absatz");
+      await page.waitForTimeout(900);
+      const tr = Date.now();
+      await page.keyboard.press("Enter");
+      try {
+        await page.waitForFunction(() => (document.querySelector(".cm-content")?.textContent || "").includes("wort 0 "), null, { timeout: 60000 });
+        await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+        liste.riesenOeffnenMs = Date.now() - tr;
+        await page.click(".cm-content"); await page.keyboard.press("Meta+ArrowDown");
+        const lat = [];
+        for (let i = 0; i < 9; i++) {
+          await page.evaluate(() => { window.__t0 = null; addEventListener("keydown", () => { window.__t0 = performance.now(); }, { capture: true, once: true }); });
+          await page.keyboard.press("x");
+          lat.push(await page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(() => ok(performance.now() - window.__t0))))));
+        }
+        liste.riesenTasteMs = median(lat);
+      } catch { liste.riesenOeffnenMs = null; }
+      await page.keyboard.press("Escape");
       await page.keyboard.press("Meta+k");
       await page.waitForSelector(".palette input:focus");
       const proTaste = [];
@@ -92,7 +134,7 @@ async function messeUi(vault) {
         }, f));
         await page.waitForTimeout(250); // die entprellte Inhalts-Anfrage ist danach durch, bevor die nächste Taste kommt
       }
-      return { bisKarteMs: bisKarte, handlerMedian: median(proTaste.map((x) => x.handler)), handlerMax: Math.max(...proTaste.map((x) => x.handler)), bisBildMedian: median(proTaste.map((x) => x.bisBild)), bisBildMax: Math.max(...proTaste.map((x) => x.bisBild)) };
+      return { liste, bisKarteMs: bisKarte, handlerMedian: median(proTaste.map((x) => x.handler)), handlerMax: Math.max(...proTaste.map((x) => x.handler)), bisBildMedian: median(proTaste.map((x) => x.bisBild)), bisBildMax: Math.max(...proTaste.map((x) => x.bisBild)) };
     } finally { await browser.close(); kind.kill(); }
   };
   const aus = { neu: await messe(wurzel) };
@@ -253,6 +295,19 @@ else {
       console.log(`| ${r.n} | Speichern WÄHREND des Aufbaus (${x.speichernAnzahl}×): Median / p95 / größte (Ziel < 50) | blockiert ≈ ${f(x.altMedian)} je Suche | ${f(x.speichernMedian)} / ${f(x.speichernP95)} / ${f(x.speichernMax)} ${x.speichernMax < 50 ? "✔" : "✘"} |`);
       console.log(`| ${r.n} | Verzug der Ereignisschleife während des Aufbaus, größter | ≈ ${f(x.altMedian)} je Suche | ${f(x.bauVerzugMax)} |`);
       console.log(`| ${r.n} | Speicher des Index (Heap + Puffer nach Aufräumen) | – | ${x.heapMB} MB |`);
+    }
+  }
+  if (ergebnisse.some((r) => r.ui?.neu?.liste)) {
+    console.log("\n| Dateien | Große Vaults im Studio (R4-5) | vorher | nachher |\n|---:|---|---:|---:|");
+    const F = (x, k, z = (v) => f(v)) => (x && x.liste && x.liste[k] != null ? z(x.liste[k]) : "–");
+    const kb = (v) => `${f(v / 1024)} KB`;
+    for (const r of ergebnisse) {
+      const u = r.ui; if (!u?.neu?.liste) continue;
+      for (const [name, k, z] of [["Startdaten /api/index (Ziel ≤ 1 MB)", "startBytes", kb], ["DOM-Knoten der Liste am Start", "knotenStart"], ["DOM-Knoten der Liste am Ende (Ziel ≤ 3000)", "knotenEnde"], ["Karten im DOM am Ende", "kartenende"], ["Liste bis zum Ende scrollen (ms)", "scrollMs"], ["Bild beim Scrollen p95 / größtes (ms, Ziel p95 ≤ 17)", "frameP95"], ["„Was ist neu“ im Posteingang (ms, Ziel ≤ 500)", "wasIstNeuMs"], ["500-KB-Absatz öffnen (ms, Ziel ≤ 300)", "riesenOeffnenMs"], ["Taste im 500-KB-Absatz (ms bis 2. Bild, Mindestwert ≈ 33)", "riesenTasteMs"]]) {
+        const kk = k === "kartenende" ? "karteneEnde" : k;
+        const extra = (x) => (k === "frameP95" && x?.liste ? ` / ${F(x, "frameMax")}` : "");
+        console.log(`| ${r.n} | ${name} | ${u.alt ? F(u.alt, kk, z) + extra(u.alt) : "–"} | ${F(u.neu, kk, z)}${extra(u.neu)} |`);
+      }
     }
   }
   if (ergebnisse.some((r) => r.ui)) {

@@ -586,7 +586,7 @@ export function erzeugeDateiaktionen(ctx) {
   }
 
   return {
-    folgeVerschiebung, kartenMenue, titelMenue, ordnerMenue, ziehbar, ablegeZiel, nachZeichnen,
+    folgeVerschiebung, kartenMenue, titelMenue, ordnerMenue, ziehbar, ablegeZiel, nachZeichnen, bricheInlineAb: () => beendeInline(false),
     umbenennenNotiz, umbenennenOrdner, verschiebenNotiz, verschiebenOrdner, papierkorbNotiz, papierkorbOrdner,
     zeichnePapierkorb, ladeKorbZahl, istFest, geschuetzt, laeuft: () => laeuft, bearbeitet: () => !!edit,
     // nur für Tests und app.js

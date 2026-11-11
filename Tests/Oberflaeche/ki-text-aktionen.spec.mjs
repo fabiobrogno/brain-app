@@ -99,7 +99,7 @@ test("Ohne Claude Code ist der Knopf aus, mit Grund im Tooltip", async ({ page }
   await waehleAbsatz(page);
   await expect(kiKnopf(page)).toBeVisible();
   await expect(kiKnopf(page)).toHaveAttribute("aria-disabled", "true");
-  await expect(kiKnopf(page)).toHaveAttribute("title", /Claude Code ist nicht installiert/);
+  await expect(kiKnopf(page)).toHaveAttribute("data-tipp-text", /Claude Code ist nicht installiert/);
 });
 
 for (const [name, schema] of schemata) {
@@ -231,15 +231,15 @@ test("Code-Block und Tabelle: die Aktion ist aus, mit Grund im Tooltip (Format-L
   await waehle(page, "const a = 1;");
   await expect(kiKnopf(page)).toBeVisible();
   await expect(kiKnopf(page)).toHaveAttribute("aria-disabled", "true");
-  await expect(kiKnopf(page)).toHaveAttribute("title", /Code-Block/);
+  await expect(kiKnopf(page)).toHaveAttribute("data-tipp-text", /Code-Block/);
   await kiKnopf(page).click({ force: true });
   await expect(pop(page)).toHaveCount(0);
   // Auswahl reicht aus dem Absatz in den Code-Block
   await imEditor(page, ({ view }) => { const t = view.state.doc.toString(); const a = t.indexOf("Brötchen holen"), b = t.indexOf("const a") + 5; view.focus(); view.dispatch({ selection: { anchor: a, head: b } }); });
-  await expect(kiKnopf(page)).toHaveAttribute("title", /Code-Block/);
+  await expect(kiKnopf(page)).toHaveAttribute("data-tipp-text", /Code-Block/);
   // Auswahl über die Tabelle hinweg
   await imEditor(page, ({ view }) => { const t = view.state.doc.toString(); const a = t.indexOf("Letzter Absatz"), b = t.indexOf("| Anna") + 4; view.focus(); view.dispatch({ selection: { anchor: b, head: a + 8 } }); });
-  await expect(kiKnopf(page)).toHaveAttribute("title", /Tabelle/);
+  await expect(kiKnopf(page)).toHaveAttribute("data-tipp-text", /Tabelle/);
   await imEditor(page, ({ view }) => { const t = view.state.doc.toString(); view.focus(); view.dispatch({ selection: { anchor: t.indexOf("Anna") - 2, head: t.indexOf("Letzter Absatz") + 8 } }); });
   await expect(kiKnopf(page)).toHaveAttribute("aria-disabled", "true");
   // Kontextmenü auf gesperrter Auswahl: Einträge aus, mit Grund

@@ -71,14 +71,14 @@ test("Vollbild (--ampel-hoehe 0): kein Platz, kein Griff", async ({ page }) => {
 test("Kopfzeile ist der Griff: leere Fläche meldet fenster-ziehen, Doppelklick fenster-zoom", async ({ page }) => {
   await startApp(page);
   // leere Fläche der Kopfzeile (links vor den Brotkrumen) und leerer Platz links in der Seitenleiste (dort sitzt die Ampel)
-  await page.mouse.move(270, 22); await page.mouse.down(); await page.mouse.up();
+  await page.mouse.move(259, 22); await page.mouse.down(); await page.mouse.up();
   expect(await aktionen(page)).toEqual(["fenster-ziehen"]);
   await leere(page);
   await page.mouse.move(30, 22); await page.mouse.down(); await page.mouse.up();
   expect(await aktionen(page)).toEqual(["fenster-ziehen"]);
   await leere(page);
   // Doppelklick: erst der Griff, beim zweiten Drücken (detail 2) das Zoomen
-  await page.mouse.dblclick(270, 22);
+  await page.mouse.dblclick(259, 22);
   expect(await aktionen(page)).toEqual(["fenster-ziehen", "fenster-zoom"]);
 });
 
@@ -103,7 +103,7 @@ test("Unterhalb der Kopfzeile und mit anderen Tasten ist nichts ein Griff", asyn
   await startApp(page);
   await page.mouse.click(600, 60); // Liste/Editor, 16 px unter der Kopfzeile
   await page.mouse.click(30, 300); // Seitenleiste
-  await page.mouse.move(270, 22); await page.mouse.down({ button: "right" }); await page.mouse.up({ button: "right" });
+  await page.mouse.move(259, 22); await page.mouse.down({ button: "right" }); await page.mouse.up({ button: "right" });
   expect(await aktionen(page)).toEqual([]);
 });
 

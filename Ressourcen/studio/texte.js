@@ -23,7 +23,7 @@ export const T = {
   bereiche: { inbox: "Posteingang", aufgaben: "Aufgaben", rueckfragen: "Rückfragen", alle: "Alle Notizen", wissen: "Wissen", archiv: "Archiv", vorlagen: "Vorlagen", papierkorb: "Papierkorb" },
   abschnitte: { favoriten: "Favoriten", ansichten: "Ansichten", typen: "Typen", ordner: "Ordner", sichten: "Sichten" },
   // Hauptfenster (P3): Kopfzeile, KI-Zeile unten in der Seitenleiste, Zähler der Statusleiste
-  kopf: { suche: "Suchen oder Befehl …", sucheTitel: "Suchen oder Befehl ausführen", verlauf: "Verlauf" },
+  kopf: { suche: "Suchen oder Befehl …", sucheTitel: "Suchen oder Befehl ausführen", verlauf: "Verlauf", seiteAus: "Seitenleiste ausblenden", seiteEin: "Seitenleiste einblenden" },
   frageZeile: "Frag deinen Vault",
   kiZeile: {
     keine: "KI verbinden", keineTitel: "Kortex hat auf diesem Mac keine KI erkannt. Klicke, um eine zu verbinden.",
@@ -218,11 +218,11 @@ export const T = {
   dialog: { schliessen: "Schließen" },
   kuerzel: {
     titel: "Tastenkürzel",
-    gruppen: [
-      // { id } = Befehl aus dem Register der Tastenkürzel (tastenkuerzel-register.json): gezeigt wird das gerade gültige Kürzel, ohne Kürzel entfällt die Zeile
-      { name: "Allgemein", zeilen: [[{ id: "palette" }, "Springen und Befehle"], [{ id: "neue-notiz" }, "Neue Notiz"], [{ id: "schnell-merken" }, "Schnell merken"], [{ id: "aufgabe-erfassen" }, "Aufgabe erfassen"], [{ id: "mitteilungen" }, "Mitteilungen"], [{ id: "frage" }, "Frag deinen Vault"], [{ id: "suche-vault" }, "Im ganzen Vault suchen"], [{ id: "kuerzel-hilfe" }, "Diese Übersicht"]] },
-      { name: "Notiz", zeilen: [[{ id: "speichern" }, "Jetzt speichern"], [{ id: "suche-notiz" }, "In der Notiz suchen"], [{ id: "info" }, "Eigenschaften ein- oder ausblenden"], [{ id: "commit" }, "Änderungen sichern"]] },
-      { name: "Liste", zeilen: [["↑ ↓", "Nächste oder vorige Notiz öffnen"], ["↵", "In die Notiz springen"], ["Esc", "Suche oder Dialog schließen"]] },
+    // Die Befehle des Registers (tastenkuerzel-register.json) listet app.js selbst nach Gruppen; hier stehen nur die festen Tasten, die nicht im Register liegen
+    fest: [
+      { name: "Liste", zeilen: [["↑ ↓", "Nächste oder vorige Notiz öffnen"], ["↵", "In die Notiz springen"], ["F2", "Notiz oder Ordner umbenennen"], ["⌘ ⌫", "Notiz in den Papierkorb legen"]] },
+      { name: "Aufgaben-Board", zeilen: [["↑ ↓", "Zwischen Karten wechseln"], ["← →", "In die Nachbarspalte"], ["⌥ ← → ↑ ↓", "Karte verschieben"], ["↵", "Notiz der Aufgabe öffnen"]] },
+      { name: "Esc", zeilen: [["Esc", "Schließt immer das Oberste: Menü, Dialog, Format-Leiste, Panel, Suche, Auswahl"]] },
     ],
     schliessen: "Schließen",
     anpassen: "Anpassen …",

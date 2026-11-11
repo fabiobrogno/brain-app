@@ -19,7 +19,8 @@
   --gelb-rand: color-mix(in srgb, var(--gelb) 42%, transparent);
   --rot-rand: color-mix(in srgb, var(--rot) 42%, transparent);
   --akzent-linie: color-mix(in srgb, var(--akzent) 55%, transparent);   /* Rand eines fokussierten Feldes */
-  --fokus-ring: 0 0 0 3px color-mix(in srgb, var(--akzent) 38%, transparent);
+  --fokus: var(--akzent);   /* R4-3: EIN Fokusring für alles, deckend (Test: Kontrast je Schema, ≥ 3:1 gegen jede Fläche); 1 px Papierspalt trennt ihn von Flächen in Akzentfarbe */
+  --fokus-ring: 0 0 0 1px var(--papier), 0 0 0 3px var(--fokus);
   /* Abstände (4-pt-Raster) */
   --a1: 4px; --a2: 8px; --a3: 12px; --a4: 16px; --a5: 20px; --a6: 24px;
   --schrift: "Geist", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
@@ -62,7 +63,7 @@ button { font: inherit; color: inherit; }
 kbd { font: 500 11px var(--schrift); }
 ::selection { background: color-mix(in srgb, var(--akzent) 22%, transparent); }
 .sym { display: block; flex: none; }
-button:focus-visible, [tabindex]:focus-visible, a:focus-visible, summary:focus-visible, [role="button"]:focus-visible, [role="tab"]:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+button:focus-visible, [tabindex]:focus-visible, a:focus-visible, summary:focus-visible, [role="button"]:focus-visible, [role="tab"]:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
 .leise { color: var(--text-3); }
 
 /* ---------- Fenster ----------
