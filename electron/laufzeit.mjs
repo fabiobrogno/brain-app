@@ -132,9 +132,105 @@ export function installiereKern({ quelle, support, plattform = process.platform 
   return { kern: stabil, ordner: dir, version };
 }
 
+// ───────────── Starter: <support>/bin/kortex (Linux) bzw. kortex.cmd (Windows), Gegenstück zu Laufzeit.swift#starterInhalt ─────────────
+// Normalmodus `kortex <befehl> …`: setzt KORTEX_KERN_PFAD auf den stabilen Verweis bin/kern und startet `node bin/kern/brain.mjs …` (fehlt etwas: Meldung auf stderr, Exit 127).
+// Hook-Modus `kortex hook <name> …`: startet bin/kern/adapters/claude-code/<name>.mjs. Fehlt Node, der Kern oder der Hook (App gelöscht, Update mitten im Wechsel), endet er STILL mit Exit 0 ohne
+// Ausgabe — nie eine Fehlermeldung in einer Claude-Sitzung. Läuft der Hook, bleiben Exit-Code, Ausgabe und stdin erhalten.
+const shText = (s) => `'${String(s).replaceAll("'", "'\\''")}'`;
+export function starterInhaltUnix(support) {
+  const node = join(support, "bin", "node"), kern = join(support, "bin", "kern");
+  return `#!/bin/sh
+# Kortex-Starter. Von der App geschrieben und bei jedem Start erneuert — nicht von Hand ändern.
+node=${shText(node)}
+kern=${shText(kern)}
+KORTEX_KERN_PFAD="$kern"
+export KORTEX_KERN_PFAD
+if [ "$1" = "hook" ]; then
+  # Hook-Modus: fehlt etwas, still beenden (Exit 0, keine Ausgabe).
+  name="$2"
+  case "$name" in
+    ''|*[!abcdefghijklmnopqrstuvwxyz0123456789-]*) exit 0 ;;
+  esac
+  hook="$kern/adapters/claude-code/$name.mjs"
+  if [ ! -f "$node" ] || [ ! -x "$node" ] || [ ! -f "$hook" ]; then exit 0; fi
+  shift 2
+  exec "$node" "$hook" "$@"
+fi
+if [ ! -f "$node" ] || [ ! -x "$node" ]; then
+  echo "kortex: Node fehlt ($node). Bitte Kortex einmal öffnen." >&2
+  exit 127
+fi
+if [ ! -f "$kern/brain.mjs" ]; then
+  echo "kortex: Kern fehlt ($kern/brain.mjs). Bitte Kortex öffnen bzw. aktualisieren." >&2
+  exit 127
+fi
+exec "$node" "$kern/brain.mjs" "$@"
+`;
+}
+// Windows: Stapeldatei. Die Pfade stehen NICHT darin, sie kommen aus ihrem eigenen Ort (%~dp0 = <support>\bin\): nichts, was man quoten müsste. Der Hook-Name wird gegen [a-z0-9-] geprüft, die übrigen
+// Argumente (--art fakt, --konto k_…) reichen als Text weiter (%* ignoriert shift, darum die Schleife). Das Ende ist `exit /b` mit dem Code des Programms.
+export function starterInhaltWindows() {
+  return [
+    "@echo off",
+    "rem Kortex-Starter. Von der App geschrieben und bei jedem Start erneuert - nicht von Hand aendern.",
+    "setlocal DisableDelayedExpansion",
+    'set "node=%~dp0node.exe"',
+    'set "kern=%~dp0kern"',
+    'set "KORTEX_KERN_PFAD=%kern%"',
+    'if /i "%~1"=="hook" goto hook',
+    'if not exist "%node%" (',
+    "  echo kortex: Node fehlt. Bitte Kortex einmal oeffnen. 1>&2",
+    "  exit /b 127",
+    ")",
+    'if not exist "%kern%\\brain.mjs" (',
+    "  echo kortex: Kern fehlt. Bitte Kortex oeffnen bzw. aktualisieren. 1>&2",
+    "  exit /b 127",
+    ")",
+    '"%node%" "%kern%\\brain.mjs" %*',
+    "exit /b %errorlevel%",
+    ":hook",
+    'set "name=%~2"',
+    'if "%name%"=="" exit /b 0',
+    "setlocal EnableDelayedExpansion", // nur für die Prüfung: `echo !name!` wertet &, | im Namen nicht aus
+    'echo !name!| findstr /r /x /c:"[a-z0-9-][a-z0-9-]*" >nul || exit /b 0',
+    "endlocal",
+    'set "hook=%kern%\\adapters\\claude-code\\%name%.mjs"',
+    'if not exist "%node%" exit /b 0',
+    'if not exist "%hook%" exit /b 0',
+    'set "rest="',
+    "shift",
+    "shift",
+    ":schleife",
+    'if "%~1"=="" goto lauf',
+    "set rest=%rest% %1",
+    "shift",
+    "goto schleife",
+    ":lauf",
+    '"%node%" "%hook%" %rest%',
+    "exit /b %errorlevel%",
+    "",
+  ].join("\r\n");
+}
+/** Schreibt den Starter atomar (erst daneben, dann umbenennen); unverändert, wenn der Inhalt schon stimmt. → Pfad. */
+export function schreibeStarter({ support, plattform = process.platform }) {
+  const win = plattform === "win32", bin = join(support, "bin"), ziel = join(bin, win ? "kortex.cmd" : "kortex");
+  const inhalt = win ? starterInhaltWindows() : starterInhaltUnix(support);
+  mkdirSync(bin, { recursive: true });
+  try { if (readFileSync(ziel, "utf8") === inhalt && (win || (statSync(ziel).mode & 0o111) === 0o111)) return ziel; } catch { /* neu */ }
+  const tmp = `${ziel}.neu-${process.pid}`;
+  wegDamit(tmp);
+  writeFileSync(tmp, inhalt, { mode: 0o755 });
+  chmodSync(tmp, 0o755);
+  benenneUm(tmp, ziel);
+  return ziel;
+}
+
 /** Alles zusammen für die installierte App: `ressourcen` = process.resourcesPath. Node ist Pflicht (wirft), der Kern fehlt nur in einem Paket ohne Kern. */
 export function installiereLaufzeit({ ressourcen, support, plattform = process.platform }) {
   const node = installiereNode({ quelle: join(ressourcen, "node"), support, plattform });
   const kern = installiereKern({ quelle: join(ressourcen, "Ressourcen", "kern"), support, plattform });
-  return { ...node, kern: kern?.kern ?? null, kernOrdner: kern?.ordner ?? null };
+  // Der Starter ist Zubehör (Hooks, Hintergrunddienst): lässt er sich nicht schreiben (Schreibschutz, Virenscanner), läuft die App trotzdem; der Grund geht an den Aufrufer (Protokoll)
+  let starter = null, starterFehler = null;
+  if (kern) { try { starter = schreibeStarter({ support, plattform }); } catch (e) { starterFehler = String(e?.message || e); } }
+  return { ...node, kern: kern?.kern ?? null, kernOrdner: kern?.ordner ?? null, starter, starterFehler };
 }

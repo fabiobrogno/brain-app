@@ -228,8 +228,8 @@ jobs:
         run: bash scripts/teste-vorschau.sh
 
   # Plattform-Probe (Paket W0, docs/plaene/plattformen-windows-linux.md): dieselben Node-, Kern- und Oberflächentests auf Windows und Linux.
-  # Linux ist ein TOR (der Job steht in `needs` von ci-ok, die Schritte laufen dort ohne continue-on-error). Windows ist MESSUNG: dort läuft jeder Schritt
-  # mit continue-on-error (ausgenommen die Node-Tests und die Vertrauensschranke vor git: Tor), der Job bleibt grün; Zahlen und rote Tests stehen in der Zusammenfassung des Laufs (Schritt „Bericht“) und als Artefakt.
+  # Linux ist ein TOR (der Job steht in `needs` von ci-ok, die Schritte laufen dort ohne continue-on-error). Windows (R4-8): Node-Tests, Vertrauensschranke und Kern-Unit-Tests sind TOR; nur die
+  # Oberflächentests (Playwright) sind dort noch MESSUNG (continue-on-error, der Job bleibt grün; Zahlen und rote Tests stehen in der Zusammenfassung des Laufs, Schritt „Bericht“, und als Artefakt).
   # Sobald Windows durchgehend grün ist, entfällt die Bedingung `matrix.os == 'windows-latest'` an den drei Schritten.
   plattform-probe:
     needs: aenderungen
@@ -251,6 +251,11 @@ jobs:
     steps:
       # Zeilenenden regelt `.gitattributes` (`* text=auto eol=lf`): auch der Windows-Checkout (core.autocrlf=true) bekommt LF.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # Git for Windows schreibt Arbeitsdateien standardmäßig mit CRLF (core.autocrlf=true). Die Test-Vaults entstehen mit "git init" ohne eigene Einstellung, die Erwartungen der Tests sind für LF geschrieben.
+      # Das Produkt erzwingt autocrlf NICHT (ein Klon mit dem Standard von Git for Windows hat CRLF im Arbeitsbaum; mit erzwungenem false meldete git status dort alles als geändert, Test v2-notizen:294):
+      # nur für diesen Lauf aus (R4-8).
+      - name: Git ohne Zeilenenden-Umwandlung (nur Testumgebung)
+        run: git config --global core.autocrlf false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: matrix.bereich != 'kern'
         with:
@@ -277,7 +282,6 @@ jobs:
       - name: Kern-Unit-Tests
         id: lauf-kern
         if: matrix.bereich == 'kern'
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
         env:
           KERN_TEST_KONKURRENZ: 4
           GIT_AUTHOR_NAME: Test
@@ -333,8 +337,7 @@ jobs:
           if-no-files-found: ignore
 
   # Electron-Hülle (Paket W2a, electron/, docs/plaene/plattformen-windows-linux.md): die ECHTE App (Playwright `_electron`) mit Test-Vault, Temp-HOME und eigenem Support-Ordner.
-  # Linux (xvfb) ist ein TOR (der Job steht in `needs` von ci-ok), Windows ist MESSUNG: der Test-Schritt läuft dort mit continue-on-error, der Job bleibt grün, das Ergebnis steht
-  # in der Zusammenfassung des Laufs. Sobald Windows durchgehend grün ist, entfällt die Bedingung `matrix.os == 'windows-latest'`.
+  # Linux (xvfb) UND Windows sind TOR (der Job steht in `needs` von ci-ok; R4-8). Sobald Windows durchgehend grün ist, entfällt die Bedingung `matrix.os == 'windows-latest'`.
   electron-probe:
     needs: aenderungen
     if: needs.aenderungen.outputs.node == 'true'
@@ -356,7 +359,6 @@ jobs:
           cache: npm
           cache-dependency-path: electron/package-lock.json
       - name: Abhängigkeiten (Electron lädt seine Programmdatei beim Installieren)
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
         run: npm ci --no-audit --no-fund
         working-directory: electron
       # Chromium-Sandbox unter Linux: der SUID-Helfer gehört root, und Ubuntu 24.04 sperrt unprivilegierte User-Namensräume. So läuft die App MIT Sandbox (kein --no-sandbox).
@@ -368,7 +370,6 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
       - name: Electron-Test
         id: lauf
-        continue-on-error: ${{ matrix.os == 'windows-latest' }}
         working-directory: electron
         env:
           KORTEX_BILDER: ${{ runner.temp }}/bilder

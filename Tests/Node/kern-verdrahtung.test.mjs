@@ -17,6 +17,9 @@ process.env.KORTEX_KERN_TEMP_WURZELN = "";
 delete process.env.KORTEX_VORSCHAU;
 const { erzeugeHandler } = await import(pfad("werkstatt", "handler.mjs"));
 const q = (p) => `'${String(p).replaceAll("'", "'\\''")}'`;
+// Der Starter, auf den die Hook-Befehle zeigen: macOS/Linux bin/kortex (e.starter), Windows bin/kortex.cmd (Stapeldatei; der Test-Starter e.starter ist dort eine .exe-Attrappe). Befehle mit Schrägstrichen.
+const hookStarter = (e) => (process.platform === "win32" ? join(e.support, "bin", "kortex.cmd") : e.starter).split("\\").join("/");
+const istStarterBefehl = (c, e) => c.includes(` hook `) && c.includes(q(hookStarter(e))) && (process.platform === "win32" ? c.startsWith(`if [ -f ${q(hookStarter(e))} ]; then `) && c.endsWith("; else exit 0; fi") : c.startsWith(`[ -x ${q(hookStarter(e))} ] && exec `) && c.endsWith(" || exit 0"));
 
 // Support-Ordner wie nach dem Start der App: kern/9.9.9 (Kopie des Kerns), bin/kern → ../kern/9.9.9, bin/kortex (Starter wie in Laufzeit.swift, ohne Hook-Modus).
 function baueSupport({ mitStarter = true } = {}) {
@@ -88,13 +91,11 @@ test("Claude Code: Hooks und Statuszeile über den Starter, nur bin/kortex und b
   assert.deepEqual(s.hooks.Stop, [fremd], "fremder Hook unverändert");
   const befehle = alleBefehle(s);
   assert.ok(befehle.includes("fremd.sh"));
-  // macOS/Linux: der Starter-Befehl (`[ -x … ] && exec … hook <name> || exit 0`); Windows hat keinen Starter, dort ruft der Befehl node mit der Hook-Datei im Kern auf (install.mjs#hookCmd)
-  const WIN = process.platform === "win32";
-  const eigene = befehle.filter((c) => c.includes(WIN ? "/adapters/claude-code/" : "hook "));
+  // Alle Systeme: der Starter-Befehl (macOS/Linux `[ -x … ] && exec … hook <name> || exit 0`, Windows `if [ -f … ]; then … hook <name>; else exit 0; fi` mit kortex.cmd, install.mjs#hookCmd)
+  const eigene = befehle.filter((c) => c.includes("hook "));
   assert.equal(eigene.length, 9, eigene.join("\n"));
   for (const c of [...eigene, s.statusLine.command]) {
-    if (WIN) assert.match(c, /^"[^"]+" "[^"]+\/adapters\/claude-code\/[a-z-]+\.mjs"/, c);
-    else assert.ok(c.startsWith(`[ -x ${q(e.starter)} ] && exec ${q(e.starter)} hook `) && c.endsWith(" || exit 0"), c);
+    assert.ok(istStarterBefehl(c, e), c);
   }
   ohneVersionOderApp(JSON.stringify(s), e);
   assert.ok(!JSON.stringify(s).includes(e.v), "kein fester Vault in den Hooks");
@@ -314,7 +315,7 @@ test("Mehrere Profile: Stand je Profil; Eintragen und Entfernen nur in den gewä
     for (const p of [h.standard, h.privat, h.firma]) assert.equal(r.j.stand.claude.profile[p].aktiv, true, p);
     for (const p of [h.standard, h.privat, h.firma]) {
       const text = readFileSync(join(p, "settings.json"), "utf8");
-      assert.ok(alleBefehle(JSON.parse(text)).some((c) => (process.platform === "win32" ? c.includes("/adapters/claude-code/") : c.startsWith(`[ -x ${q(e.starter)} ] && exec ${q(e.starter)} hook `))), p); // Windows: node + Hook-Datei statt Starter
+      assert.ok(alleBefehle(JSON.parse(text)).some((c) => istStarterBefehl(c, e)), p);
       assert.ok(!text.includes(e.version) && !text.includes("/kern/9.9.9"));
     }
     assert.ok(existsSync(join(h.privat, "commands")), "die Befehle liegen im Profilordner");

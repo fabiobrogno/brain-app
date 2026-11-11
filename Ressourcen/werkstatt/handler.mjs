@@ -34,7 +34,7 @@ import { STUFEN, pflegeFuer, stufeFuer, darfMindestens } from "../gemeinsam/ki-k
 import { erzeugePflege } from "./pflege.mjs";
 import { merkeRemoteBestaetigt } from "../gemeinsam/sicherungsmerker.mjs";
 import { ADAPTER, erkenneProgramme } from "./ki-programme/index.mjs";
-import { eigeneGruppe } from "../gemeinsam/plattform.mjs";
+import { eigeneGruppe, starterName } from "../gemeinsam/plattform.mjs";
 
 const HIER = dirname(fileURLToPath(import.meta.url));
 export const MAX_KOERPER = 8 * 1024 * 1024;
@@ -213,7 +213,7 @@ export function erzeugeHandler(o) {
   // Gesamtfristen je Route in ms (nur im Test kürzer): mcp/verbinden 25 s, Probe über den MCP-Server 10 s.
   const fristen = { mcpVerbinden: 25_000, probe: 10_000, ...(o.fristen || {}) };
   // Einrichtung über den Starter der App (Hooks bei Claude Code, Prüfung vor dem Speichern, Hintergrunddienst): werkstatt/verdrahtung.mjs. o.starter = Ersatz für Tests.
-  const verdrahtung = erzeugeVerdrahtung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner(),
+  const verdrahtung = erzeugeVerdrahtung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", starterName()), support: vaultOpt.support || supportOrdner(),
     kontoFuerProfil: (pfad) => { if (o.kontenAus === true) return null; try { return konten.kontoFuerProfil(pfad) || (konten.synchronisiere(), konten.kontoFuerProfil(pfad)); } catch { return null; } },
     freigeben: (konto, vault, stufe, ausdruecklich = false) => konten.setzeZugriff({ konto, vault: vault.wurzel, stufe, quelle: "assistent", ausdruecklich }) ,
     // Ein Profil, das der Assistent beim Einrichten des Dienstes mitschickt, schlägt nur das Pflege-Konto vor: nur mit „erweitert“ für diesen Vault und nur, wenn der Vault noch keine Pflege-Einstellung hat.
@@ -266,7 +266,7 @@ export function erzeugeHandler(o) {
   // Eigene Tastenkürzel (P10): GET/PUT /api/tastenkuerzel auf <support>/tastenkuerzel.json (nur Abweichungen vom Register gemeinsam/tastenkuerzel-register.json), mit `stand`.
   const tastenkuerzel = erzeugeTastenkuerzel({ support: vaultOpt.support || supportOrdner() });
   // Umstellung eines Vaults aus der Kit-Zeit (P7a Befund, P7b Probelauf/Phase A/Rückweg): werkstatt/umstellung.mjs
-  const umstellung = erzeugeUmstellung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", "kortex"), support: vaultOpt.support || supportOrdner() });
+  const umstellung = erzeugeUmstellung({ starter: o.starter || join(vaultOpt.support || supportOrdner(), "bin", starterName()), support: vaultOpt.support || supportOrdner() });
 
   // Liste für die Oberfläche: gespeicherte Vaults (+ ein nur für diesen Start geöffneter, der nicht in vaults.json steht).
   function vaultListe(v) {

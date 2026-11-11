@@ -44,7 +44,8 @@ export function pfadFormen(pfad, { home = homedir() } = {}) {
   if (p === "~" || p.startsWith("~/") || p.startsWith("~\\")) p = join(home, p.slice(1));
   if (!isAbsolute(p) && !win32.isAbsolute(p)) return [];
   const formen = new Set();
-  const dazu = (x) => { const f = ohneSchluss(fwd(x).normalize("NFC")); if (f) formen.add(f); };
+  // Eine Laufwerkswurzel („D:“ aus realpath("/") unter Windows) ist wie „/“ kein Ordner, der sich sperren ließe: sie gäbe das ganze Laufwerk frei oder zu.
+  const dazu = (x) => { const f = ohneSchluss(fwd(x).normalize("NFC")); if (f && !/^[A-Za-z]:$/.test(f)) formen.add(f); };
   dazu(p);
   try { dazu(realpathSync(p)); } catch {}
   const h = ohneSchluss(fwd(home).normalize("NFC"));

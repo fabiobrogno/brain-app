@@ -1,6 +1,7 @@
 // Editor-Erweiterung für Bilder und Anhänge (Paket 3a, Runde 3): Einfügen und Ziehen von Dateien, Bilder und Chips im Text (Live-Vorschau), Platzhalter für externe Bilder.
 // Eigenes Modul, damit editor.js nur eine Zeile braucht. Der Text bleibt bytegleich: `![[datei.png]]` und `![Alt](pfad)` stehen unverändert in der Datei, gezeigt wird nur per Dekoration.
-//   · Eigene Zeile (Cursor nicht darin): die Schreibweise wird durch Bild bzw. Chip ersetzt. Cursor in der Zeile (oder Rohtext): der Text bleibt sichtbar, das Bild steht dahinter.
+//   · Die Schreibweise wird durch Bild bzw. Chip ersetzt. Der Text erscheint nur, wenn der Cursor MITTEN in ihr steht (Klick, Suchsprung; Rohtext-Modus zeigt ihn immer): das Bild steht dann dahinter.
+//     Die Ersetzung ist atomar: Pfeiltasten hüpfen über Bild und Chip (R4-2), die Zeile ändert beim Hineinlaufen nie ihre Höhe.
 //   · Klick auf ein Bild: Lightbox. Klick auf einen Chip: Datei mit dem Programm des Systems öffnen (Hüllen-Vertrag: anhang-oeffnen).
 //   · Externe Bilder (https): Platzhalter, bis der Nutzer klickt (oder die Einstellung „Externe Bilder laden“ an ist); sie laufen über die Werkstatt (/_extern-bild), die Seite bleibt bei img-src 'self'.
 import * as CM from "./vendor/codemirror.bundle.js";
@@ -93,16 +94,15 @@ function imCode(state, pos) {
 }
 
 function dekos(view, A, ctx) {
-  if (ctx.roh?.()) return Decoration.none;
+  if (ctx.roh?.()) return { alle: Decoration.none, atomar: Decoration.none };
   const { state } = view, doc = state.doc;
   const von = ctx.pfad?.() || "";
-  const aktiv = new Set();
-  if (view.hasFocus) for (const r of state.selection.ranges) for (let n = doc.lineAt(r.from).number, e = doc.lineAt(r.to).number; n <= e; n++) aktiv.add(n);
-  const liste = [];
+  const innen = (a, b) => view.hasFocus && state.selection.ranges.some((r) => (r.head > a && r.head < b) || (r.anchor > a && r.anchor < b)); // Cursor mitten im Text der Einbettung
+  const liste = [], ersetzt = [];
   const belegt = []; // [von, bis) der Einbettungen: Markdown-Bilder darin zählen nicht
   const setze = (a, b, widget) => {
-    if (aktiv.has(doc.lineAt(a).number)) { widget.dahinter = true; liste.push(Decoration.widget({ widget, side: 1 }).range(b)); }
-    else liste.push(Decoration.replace({ widget }).range(a, b));
+    if (innen(a, b)) { widget.dahinter = true; liste.push(Decoration.widget({ widget, side: 1 }).range(b)); }
+    else { const r = Decoration.replace({ widget }).range(a, b); liste.push(r); ersetzt.push(r); }
   };
   for (const { from, to } of view.visibleRanges) {
     const a0 = doc.lineAt(from).from, b0 = doc.lineAt(to).to;
@@ -141,7 +141,7 @@ function dekos(view, A, ctx) {
       } });
     }
   }
-  return Decoration.set(liste, true);
+  return { alle: Decoration.set(liste, true), atomar: Decoration.set(ersetzt, true) };
 }
 
 const hatDateien = (dt) => !!dt && [...(dt.types || [])].includes("Files");
@@ -149,11 +149,11 @@ const hatDateien = (dt) => !!dt && [...(dt.types || [])].includes("Files");
 // A: erzeugeAnhaenge(...) aus anhaenge.js · ctx: { roh(), pfad() }
 export function anhangErweiterung(A, ctx) {
   const plugin = ViewPlugin.fromClass(class {
-    constructor(view) { this.deko = dekos(view, A, ctx); A.beiNeuZeichnen(() => { try { view.dispatch({ effects: neuBauen.of(null) }); } catch { /* View weg */ } }); }
+    constructor(view) { ({ alle: this.deko, atomar: this.atomar } = dekos(view, A, ctx)); A.beiNeuZeichnen(() => { try { view.dispatch({ effects: neuBauen.of(null) }); } catch { /* View weg */ } }); }
     update(u) {
-      if (u.docChanged || u.selectionSet || u.viewportChanged || u.focusChanged || u.transactions.some((t) => t.effects.length) || CM.syntaxTree(u.startState) !== CM.syntaxTree(u.state)) this.deko = dekos(u.view, A, ctx);
+      if (u.docChanged || u.selectionSet || u.viewportChanged || u.focusChanged || u.transactions.some((t) => t.effects.length) || CM.syntaxTree(u.startState) !== CM.syntaxTree(u.state)) ({ alle: this.deko, atomar: this.atomar } = dekos(u.view, A, ctx));
     }
-  }, { decorations: (v) => v.deko });
+  }, { decorations: (v) => v.deko, provide: (p) => EditorView.atomicRanges.of((view) => view.plugin(p)?.atomar || Decoration.none) });
 
   const handler = EditorView.domEventHandlers({
     paste(e, view) {

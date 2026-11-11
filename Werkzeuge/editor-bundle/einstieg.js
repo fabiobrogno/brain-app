@@ -5,4 +5,5 @@ export { syntaxTree, syntaxHighlighting, HighlightStyle, LanguageDescription } f
 export { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 export { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 export { search, searchKeymap, openSearchPanel, closeSearchPanel, highlightSelectionMatches } from "@codemirror/search";
-export { tags } from "@lezer/highlight";
+export { tags, tagHighlighter, highlightTree } from "@lezer/highlight";
+export { sprachListe } from "./sprachen.js"; // Code-Blöcke (R4-2): Sprachen werden einzeln nachgeladen

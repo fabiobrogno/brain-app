@@ -113,7 +113,7 @@ for (const [schema, dunkel] of [["hell", false], ["dunkel", true]]) {
     await expect(erste.locator(".gl-satz")).toHaveText("Claude Code hat eine Aufgabe angelegt.");
     await expect(erste.locator(".gl-satz b")).toHaveText("Claude Code");
     await expect(erste.locator("time")).toHaveText("vor 4 Min");
-    await expect(erste.locator(".gl-meta")).toContainText("Vault " + vault.split("/").pop());
+    await expect(erste.locator(".gl-meta")).toContainText("Vault " + vault.split(/[\\/]/).pop());
     await expect(erste.locator("[data-ki-logo='claude']")).toBeVisible();
     await expect(erste.locator(".gl-punkt")).toHaveAttribute("aria-label", "ungelesen");
     // Abweisung: Warnung (rot), mit Satz, „abgewiesen“ und dem Hinweis zur Stufe

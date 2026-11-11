@@ -46,7 +46,7 @@ test("⌘N legt sofort eine leere Notiz an: kein Dialog, Cursor in der Titelzeil
   await page.keyboard.press("Meta+n");
   await expect(page.locator("#editor")).toBeVisible();
   await expect(page.locator(".dialog")).toHaveCount(0);
-  await expect(zeilen(page).first()).toHaveText("# ");
+  await expect(zeilen(page).first()).toHaveText("Titel"); // leere Titelzeile: Platzhalter statt „#“
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Neue Notiz");
   await expect(page.locator("#editor .cm-editor")).toHaveClass(/cm-focused/);
   // noch nichts getippt: keine Datei
@@ -70,7 +70,7 @@ test("Eine leer verlassene neue Notiz hinterlässt keine Datei; ein zweites ⌘N
   const vorher = readdirSync(join(vault, "00_inbox")).sort();
   await page.keyboard.press("Meta+n");
   await page.keyboard.press("Meta+n");
-  await expect(zeilen(page).first()).toHaveText("# ");
+  await expect(zeilen(page).first()).toHaveText("Titel"); // leere Titelzeile: Platzhalter statt „#“
   await page.keyboard.type("   ");
   await page.locator("#liste-koerper [data-karte]").first().click();
   await expect(page.locator("#pfad .krume.aktuell")).not.toHaveText("Neue Notiz");
@@ -335,7 +335,7 @@ test("Zurück/Vor: eine verschwundene Notiz fällt lautlos weg; Umbenennen folgt
 test("Zurück/Vor: aus einer neuen Notiz führt ⌥⌘← zur vorigen; ohne Vault geschieht nichts", async ({ page }) => {
   await start(page, "10_notizen/Reise nach Lissabon.md");
   await page.keyboard.press("Meta+n");
-  await expect(zeilen(page).first()).toHaveText("# ");
+  await expect(zeilen(page).first()).toHaveText("Titel"); // leere Titelzeile: Platzhalter statt „#“
   await page.keyboard.press("Meta+Alt+ArrowLeft");
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Reise nach Lissabon");
   await expect(page.locator("#nav-vor")).toHaveAttribute("aria-disabled", "true");
@@ -458,7 +458,7 @@ test("W2: Verwerfen im Speicherfehler-Dialog lässt einen Entwurf nicht ohne Abl
 test("Nach Review 2: eine frisch angelegte Notiz hat die richtige Basis — schreibt ein anderes Programm hinein, bevor sie gespeichert ist, gehen getippte Zeilen nicht verloren", async ({ page }) => {
   await start(page, "10_notizen/Reise nach Lissabon.md");
   await page.keyboard.press("Meta+n");
-  await expect(zeilen(page).first()).toHaveText("# ");
+  await expect(zeilen(page).first()).toHaveText("Titel"); // leere Titelzeile: Platzhalter statt „#“
   await page.keyboard.type("Basis-Test");
   await expect(page.locator("#speicherstand")).toHaveText("Gespeichert", { timeout: 8000 });
   const datei = "00_inbox/basis-test.md";

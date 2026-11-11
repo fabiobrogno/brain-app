@@ -21,7 +21,7 @@ function alleDateien(ordner) {
 test("jede Datei unter vendor/ (Studio und 3D-Ansicht) ist in den Hinweisen genannt", () => {
   const dateien = [...alleDateien("Ressourcen/studio/vendor"), ...alleDateien("Ressourcen/kern/ansicht/vendor")];
   assert.ok(dateien.length >= 50, `zu wenige Vendor-Dateien gefunden (${dateien.length}) — Suchpfad prüfen`);
-  const fehlt = dateien.filter((d) => basename(d) !== "DRITTANBIETER.md" && !NOTICES.includes(basename(d))).map((d) => relative(W, d));
+  const fehlt = dateien.filter((d) => basename(d) !== "DRITTANBIETER.md" && !NOTICES.includes(basename(d)) && !(/^sprache-[A-Z0-9]+\.js$/.test(basename(d)) && NOTICES.includes("sprache-<Kennung>.js"))).map((d) => relative(W, d));
   assert.deepEqual(fehlt, [], `Diese Vendor-Dateien fehlen in THIRD-PARTY-NOTICES.md: ${fehlt.join(", ")}`);
 });
 

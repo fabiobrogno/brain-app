@@ -62,6 +62,17 @@ test("Paket: die Werkstatt läuft mit dem mitgelieferten Node; MCP-Eintrag und S
   // der Kern im Support-Ordner ist ein Verweis (Symlink/Junction) auf eine Versionskopie
   expect(lstatSync(join(support, "bin", "kern")).isSymbolicLink()).toBe(true);
   expect(realpathSync(join(support, "bin", "kern")).startsWith(realpathSync(join(support, "kern")))).toBe(true);
+  // Starter für Claude-Code-Hooks und den Kern (R4-8): bin/kortex bzw. bin/kortex.cmd, läuft ohne node im PATH mit dem mitgelieferten Node; ein Hook-Aufruf ohne Vault und ein unbekannter Hook enden still mit 0
+  const starter = join(support, "bin", WIN ? "kortex.cmd" : "kortex");
+  expect(existsSync(starter), `Starter ${starter}`).toBe(true);
+  const hook = (name) => {
+    const opt = { input: "{}", encoding: "utf8", windowsHide: true, timeout: 60_000, env: { ...process.env, PATH: pfadOhneNode(), HOME: lauf.home, USERPROFILE: lauf.home } };
+    return WIN ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `""${starter}" hook ${name}"`], { ...opt, windowsVerbatimArguments: true }) : spawnSync(starter, ["hook", name], opt);
+  };
+  for (const name of ["gibt-es-nicht", "brain-hint"]) {
+    const r = hook(name);
+    expect([r.status, `${r.stdout}${r.stderr}`.trim()], `Hook ${name}`).toEqual([0, ""]);
+  }
   // Paket-Inhalt: Updates sind eingerichtet (GitHub), Ressourcen ohne Entwürfe und Tests
   const res = join(dirname(PROGRAMM), "resources");
   expect(readFileSync(join(res, "app-update.yml"), "utf8")).toMatch(/provider: github/);

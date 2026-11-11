@@ -12,6 +12,7 @@ Neubau: `cd Werkzeuge/editor-bundle && npm install && npm run bauen`). Es wird o
 | @codemirror/lang-markdown | 6.5.2 | MIT |
 | @codemirror/autocomplete | 6.20.4 | MIT |
 | @codemirror/search | 6.7.2 | MIT |
+| @codemirror/lang-javascript, lang-json, lang-python, lang-yaml, lang-html, lang-css, lang-sql, legacy-modes (Sprachen der Code-Blöcke, Dateien `sprache-*.js`, nur bei Bedarf geladen) | 6.2.5 / 6.0.2 / 6.2.1 / 6.1.3 / 6.4.12 / 6.3.1 / 6.10.0 / 6.5.5 | MIT |
 | @lezer/highlight (und weitere @lezer/*, @marijn/*, style-mod, w3c-keyname, crelt als Abhängigkeiten) | 1.2.5 | MIT |
 
 Copyright © Marijn Haverbeke und Mitwirkende. MIT-Lizenztext: https://github.com/codemirror/dev/blob/main/LICENSE

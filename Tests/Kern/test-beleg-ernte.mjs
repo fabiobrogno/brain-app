@@ -6,6 +6,7 @@ import { mkdirSync, symlinkSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { tempOrdner } from "./verlauf-fixture.mjs";
+import { nurUnix } from "./nur-unix.mjs";
 import { findeZitat } from "../beleg.mjs";
 import {
   pfadFormen, nenntPfad, sperrPfade, aufrufGesperrt, markiereEigenes, webAdresse, ohneEingespieltes, ergebnisText,
@@ -253,7 +254,7 @@ test("aussageGedeckt: Unbrauchbares wirft nie — kein String, leeres Zitat", ()
 
 // ---------- W1: Selbstbestätigungs-Sperre — Pfadformen und Inhalt ----------
 
-test("W1 Pfadformen: $HOME/…, ${HOME}/… und relative ../… (gegen den cwd aufgelöst) nennen den Vault", () => {
+test("W1 Pfadformen: $HOME/…, ${HOME}/… und relative ../… (gegen den cwd aufgelöst) nennen den Vault", { skip: nurUnix("POSIX-Fixture: relative Pfade lösen unter Windows gegen ein Laufwerk auf, die Sperrliste nennt /heim/jo ohne Laufwerk; $HOME gibt es dort in Claude-Hooks nicht") }, () => {
   const sperr = sperrPfade("/heim/jo/brain", [], { home: HOME });
   for (const form of ["$HOME/brain", "${HOME}/brain"]) assert.ok(sperr.includes(form), form);
   assert.ok(aufrufGesperrt({ command: "cat $HOME/brain/09_wiki/firma/x.md" }, "/projekte/x", sperr));

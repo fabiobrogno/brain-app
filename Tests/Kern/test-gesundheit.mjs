@@ -381,15 +381,16 @@ test("dienst: nicht erreichbar — nie gestartet und sauber beendet (ende-Zeile)
   assert.equal(kurzListe(await nur("dienst", v, { haken })).length, 1, "die LETZTE Zeile entscheidet");
 });
 
-test("dienst: echter Unix-Socket — ein kleiner Fake-Dienst antwortet, dienst-client.mjs wird wirklich benutzt", { skip: NUR_UNIX_W("Unix-Socket im Temp-Ordner: unter Windows EACCES (Folgeaufgabe W2: Named Pipe)") }, async (t) => {
+test("dienst: echter Socket (Windows: Named Pipe) — ein kleiner Fake-Dienst antwortet, dienst-client.mjs wird wirklich benutzt", async (t) => {
   const net = await import("node:net");
   const { mkdtempSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const v = mkdtempSync(join(tmpdir(), "bg-")) + "/v";
   mkdirSync(join(v, ".logs"), { recursive: true });
   writeFileSync(join(v, "brain.config.json"), JSON.stringify(DIENST_CFG));
-  const sock = join(v, ".logs", "suchdienst.sock");
-  if (Buffer.byteLength(sock) > 100) return t.skip("Socket-Pfad zu lang für diese Temp-Umgebung");
+  const { dienstSocket } = await import("../dienst-client.mjs");
+  const sock = dienstSocket(v);
+  if (process.platform !== "win32" && Buffer.byteLength(sock) > 100) return t.skip("Socket-Pfad zu lang für diese Temp-Umgebung");
   const server = net.createServer((c) => { c.on("data", () => c.end(JSON.stringify({ ok: true, results: [] }) + "\n")); });
   await new Promise((ja) => server.listen(sock, ja));
   try {

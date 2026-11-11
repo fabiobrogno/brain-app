@@ -120,7 +120,7 @@ test("nicht verbunden: Code, Tabelle, Zitat/Callout, Überschrift, harter Umbruc
     "Absatz vorher mit zwei Zeilen.", "",                                  // zum Vergleich: der gewöhnliche Absatz fließt
     "> Zitat oder Callout über", "> mehrere Zeilen.", "",              // Zitat/Callout
     "",                                                                    // (Tabelle: Widget)
-    "```js", "const a = 1;", "const b = 2;", "```", "",                    // eingezäunter Code
+    "js", "const a = 1;", "const b = 2;", "", "",                    // eingezäunter Code
     "    eingerückter Code", "    zweite Zeile", "",                        // eingerückter Code
     "Harter Umbruch  ", "bleibt sichtbar und der Rest fließt weiter.", "", // harter Umbruch bleibt, der Rest fließt
     "Backslash\\", "auch sichtbar.", "",                                    // harter Umbruch mit Backslash

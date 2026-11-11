@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fm } from "./traum-hilfe.mjs";
 import { konfliktZeile } from "../gedaechtnis.mjs";                       // Format von _konflikte.md: dieselbe Funktion wie im Abgleich
+import { resolve } from "node:path";
 // Zugangsdaten- und Pfad-Muster der Fixtures zur Laufzeit zusammensetzen — der Publish-Check darf im Quelltext nichts Echtes sehen.
 const j = (...t) => t.join("");
 const TOKENZEILE = j("tok", "en = ", "abc123456789");
@@ -209,7 +210,7 @@ test("Eingabe: Maske ersetzt Zeilen mit Thema und Zeilen, die auf ausgeschlossen
   assert.equal(E.traumKonfig({ werte: { ernteOhneThema: ["a"] } }), null, "Einstellungen unlesbar → null (fail-closed)");
   assert.equal(E.traumKonfig({}), null);
   const k = E.traumKonfig({ werte: { ernteOhneThema: ["Alpha"], traumOhneThema: ["beta", "alpha"], gedaechtnisWurzel: "~/x", gedaechtnisKonten: ["~/a", "/b"], traumProjekteMax: 3 }, home: "/h" });
-  assert.deepEqual([k.wurzel, k.konten, k.max, k.woerter], ["/h/x", ["/h/a", "/b"], 3, ["Alpha", "beta"]], "ernteOhneThema und traumOhneThema zusammen, Dubletten einmal");
+  assert.deepEqual([k.wurzel, k.konten, k.max, k.woerter], [resolve("/h/x"), [resolve("/h/a"), resolve("/b")], 3, ["Alpha", "beta"]], "ernteOhneThema und traumOhneThema zusammen, Dubletten einmal");
 });
 
 // ---------- Herkunft jeder neuen Zeile (Befund 1: Regeln ließen sich über „zusammengefuehrt“/„konflikt“ ohne Beleg umgehen) ----------

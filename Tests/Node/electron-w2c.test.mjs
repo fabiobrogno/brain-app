@@ -341,3 +341,18 @@ test("Vorschau-Skript: Wegwerf-Ordner, Umgebung ausdrücklich gebaut, nichts vom
   assert.deepEqual(readdirSync(d).filter((n) => n.startsWith("kortex-vorschau-")), []);
 });
 const dirnameVon = (p) => p.slice(0, p.lastIndexOf("/")) || "/";
+
+test("Laufzeit: lässt sich der Starter nicht schreiben, läuft alles andere weiter (kein Abbruch der App), der Grund steht im Ergebnis", () => {
+  const d = temp(), support = join(d, "support");
+  const ressourcen = join(d, "resources");
+  nodeQuelle(join(ressourcen, "node")); kernQuelle(join(ressourcen, "Ressourcen", "kern"));
+  const ok = installiereLaufzeit({ ressourcen, support });
+  assert.ok(ok.starter && existsSync(ok.starter) && ok.starterFehler === null);
+  rmSync(ok.starter);
+  mkdirSync(ok.starter); // an der Stelle des Starters steht ein Ordner: Schreiben und Umbenennen scheitern
+  writeFileSync(join(ok.starter, "x"), "x");
+  const r = installiereLaufzeit({ ressourcen, support });
+  assert.equal(r.starter, null);
+  assert.match(r.starterFehler, /\S/);
+  assert.ok(r.node && r.kern, "Node und Kern stehen trotzdem");
+});

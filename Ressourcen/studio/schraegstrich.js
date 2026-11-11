@@ -25,6 +25,7 @@ const EINTRAEGE = [
   { id: "punkt", gruppe: "listen", sym: "gliederung", art: "punkt", kz: "format-liste-punkt", md: "-" },
   { id: "nummer", gruppe: "listen", sym: "liste-nummer", art: "nummer", kz: "format-liste-nummer", md: "1." },
   { id: "zitat", gruppe: "bloecke", sym: "zitat", art: "zitat", md: ">" },
+  { id: "callout", gruppe: "bloecke", sym: "info", md: "> [!" },
   { id: "code", gruppe: "bloecke", sym: "code", md: "```" },
   { id: "trennlinie", gruppe: "bloecke", sym: "trennlinie", md: "---" },
   { id: "tabelle", gruppe: "bloecke", sym: "tabelle" },
@@ -295,6 +296,7 @@ export function schraegstrichMenue(ctx = {}) {
       this.schliesse();
       if (e.art) { ersetze(v, von, bis, (s) => L.zeilenAenderung(s, e.art, EditorSelection)); return; }
       switch (e.id) {
+        case "callout": ersetze(v, von, bis, (s) => L.blockAenderung(s, "> [!note] \n> ", 10, EditorSelection)); break; // Cursor hinter „[!note] “: dort steht der Titel
         case "code": ersetze(v, von, bis, (s) => L.blockAenderung(s, "```\n\n```", 4, EditorSelection)); break;
         case "trennlinie": ersetze(v, von, bis, (s) => L.blockAenderung(s, "---", null, EditorSelection)); break;
         case "tabelle": {

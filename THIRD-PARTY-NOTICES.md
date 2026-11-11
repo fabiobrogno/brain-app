@@ -10,7 +10,7 @@ vorab gebautes Bündel (siehe CodeMirror).
 | Bestandteil | Version | Lizenz | Ort im Paket |
 |---|---|---|---|
 | Node.js (gebündelte Laufzeit) | v24.22.0 | MIT (mit eigenen Lizenzen der enthaltenen Bibliotheken) | `node-runtime/bin/node`, `node-runtime/LICENSE` |
-| Electron (Hülle der Pakete für Windows und Linux) | 45.0.0 | MIT (Chromium und enthaltene Bibliotheken: eigene Lizenzen) | `LICENSE.electron.txt`, `LICENSES.chromium.html` neben dem Programm |
+| Electron (Hülle der Pakete für Windows und Linux) | 45.1.0 | MIT (Chromium und enthaltene Bibliotheken: eigene Lizenzen) | `LICENSE.electron.txt`, `LICENSES.chromium.html` neben dem Programm |
 | electron-updater (Updates der Pakete für Windows und Linux) | 6.8.11 | MIT (Abhängigkeiten: MIT, ISC, BlueOak-1.0.0, Python-2.0) | `resources/app.asar`, Lizenztexte unter `node_modules/<Paket>/` darin |
 | Sparkle (Update-Framework) | 2.10.0 | MIT (mit eigenen Lizenzen einzelner Quelldateien) | `Frameworks/Sparkle.framework` |
 | CodeMirror 6 und Lezer (Editor) | siehe unten | MIT | `studio/vendor/codemirror.bundle.js` |
@@ -199,11 +199,11 @@ POSSIBILITY OF SUCH DAMAGE.
 ## CodeMirror 6 und Lezer (Markdown-Editor)
 
 `studio/vendor/codemirror.bundle.js` ist ein einmal mit esbuild gebautes Bündel (Quelle und Neubau: `Werkzeuge/editor-bundle/`, ohne
-Änderungen am Quelltext der Pakete). Enthalten sind die Pakete (alle MIT): @codemirror/state 6.7.6, @codemirror/view 6.43.15,
+Änderungen am Quelltext der Pakete); die Sprachen der Code-Blöcke liegen als `sprache-<Kennung>.js` daneben (gleicher Bau, werden erst bei Bedarf geladen). Enthalten sind die Pakete (alle MIT): @codemirror/state 6.7.6, @codemirror/view 6.43.15,
 @codemirror/commands 6.11.1, @codemirror/language 6.13.1, @codemirror/lang-markdown 6.5.2, @codemirror/lang-html 6.4.12,
 @codemirror/lang-css 6.3.1, @codemirror/lang-javascript 6.2.5, @codemirror/lint 6.9.7, @codemirror/autocomplete 6.20.4,
 @codemirror/search 6.7.2, @lezer/common 1.5.4, @lezer/highlight 1.2.5, @lezer/lr 1.4.11, @lezer/markdown 1.8.1, @lezer/html 1.3.13,
-@lezer/css 1.3.9, @lezer/javascript 1.5.6, @marijn/find-cluster-break 1.0.4, crelt 1.0.7, style-mod 4.1.4, w3c-keyname 2.2.8.
+@lezer/css 1.3.9, @lezer/javascript 1.5.6, @codemirror/lang-json 6.0.2, @codemirror/lang-python 6.2.1, @codemirror/lang-yaml 6.1.3, @codemirror/lang-sql 6.10.0, @codemirror/legacy-modes 6.5.5, @lezer/json 1.0.3, @lezer/python 1.1.19, @lezer/yaml 1.0.4, @marijn/find-cluster-break 1.0.4, crelt 1.0.7, style-mod 4.1.4, w3c-keyname 2.2.8.
 Projekt: https://codemirror.net
 
 ```
@@ -542,9 +542,9 @@ Name, Marke und Logo von Orca sind nicht übernommen; Kortex ist mit Orca nicht 
 (https://github.com/refactoringhq/tolaria, AGPL-3.0) sind nur als Prinzipien in `docs/plaene/design-wizards.md` beschrieben, es wurde nichts
 daraus übernommen.
 
-## Electron 45.0.0 und electron-updater 6.8.11 (Pakete für Windows und Linux)
+## Electron 45.1.0 und electron-updater 6.8.11 (Pakete für Windows und Linux)
 
-Die Pakete für Windows und Linux laufen auf Electron (https://www.electronjs.org, Quelltext: Version 45.0.0 auf der Seite des Projekts). Electron liegt unverändert
+Die Pakete für Windows und Linux laufen auf Electron (https://www.electronjs.org, Quelltext: Version 45.1.0 auf der Seite des Projekts). Electron liegt unverändert
 im Paket; die Lizenz von Electron (`LICENSE.electron.txt`) und die Lizenzen von Chromium und seinen Bibliotheken (`LICENSES.chromium.html`) liegen neben dem Programm.
 Für die Updates enthält `resources/app.asar` das Paket `electron-updater` (https://www.electron.build) und seine Abhängigkeiten; deren Lizenztexte liegen im
 `app.asar` unter `node_modules/<Paket>/`.

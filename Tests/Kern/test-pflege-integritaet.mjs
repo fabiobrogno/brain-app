@@ -158,8 +158,11 @@ for (const [id, name, regelFuer, erwartet] of FAELLE) {
       // Die .git/config des Vaults trägt jetzt einen Schlüssel, der nicht auf der Erlaubnisliste steht: git-sicher verweigert jeden weiteren
       // git-Aufruf des Kerns (Exit 126) — die Kopie lässt sich nicht mehr per Kern-git zurücksetzen und wird einfach weggeworfen. Wichtig ist:
       // erkannt, verworfen, gestoppt, nichts gemergt (siehe unten).
-      const r = spawnSync(join(KERN, "git-sicher"), ["-C", kopie.pfad, "status", "--porcelain"], { encoding: "utf8" });
-      assert.equal(r.status, 126, "git-sicher sperrt den Vault mit der veränderten .git/config");
+      // (Windows: das Shell-Skript git-sicher gibt es dort nicht; die Schranke in Node prüft test-git-sicher-node.mjs.)
+      if (process.platform !== "win32") {
+        const r = spawnSync(join(KERN, "git-sicher"), ["-C", kopie.pfad, "status", "--porcelain"], { encoding: "utf8" });
+        assert.equal(r.status, 126, "git-sicher sperrt den Vault mit der veränderten .git/config");
+      }
     } else {
       assert.equal(git(kopie.pfad, "status", "--porcelain", "--ignored"), "");
     }

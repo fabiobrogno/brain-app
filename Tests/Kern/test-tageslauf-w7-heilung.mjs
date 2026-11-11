@@ -94,7 +94,7 @@ test("Merge scheitert (lokale Änderung an der Seite) → der nächste Lauf setz
 test("Heilung gilt auch nach Ingest-Sperre und Probe: die Probe schreibt nichts, der scharfe Lauf danach setzt das Feld", async () => {
   const v = vault();
   schreibeW7(v, w7Zeile("u1"));
-  writeFileSync(join(v, ".logs", "ingest.lock"), "ingest 1\n");
+  writeFileSync(join(v, ".logs", "ingest.lock"), `ingest ${process.pid}\n`);
   const r1 = await T.tageslauf(v, { claudeBefehl: FAKE_BEFEHL, jetzt: JETZT, nurAntworten: true });
   assert.equal(r1.status, "teilweise");
   assert.match(r1.grund, /ingest/);

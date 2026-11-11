@@ -60,7 +60,7 @@ test("Öffnen: „/“ in leerer Zeile zeigt alle Einträge gruppiert; Rücktast
   await oeffne(page);
   await page.keyboard.type("/");
   await expect(menue(page)).toBeVisible();
-  expect(await namen(page)).toEqual(["Text", "Überschrift 1", "Überschrift 2", "Überschrift 3", "Aufgabe", "Aufzählung", "Nummerierung", "Zitat", "Codeblock", "Trennlinie", "Tabelle", "Bild oder Datei", "Link zu Notiz", "Datum heute"]);
+  expect(await namen(page)).toEqual(["Text", "Überschrift 1", "Überschrift 2", "Überschrift 3", "Aufgabe", "Aufzählung", "Nummerierung", "Zitat", "Callout", "Codeblock", "Trennlinie", "Tabelle", "Bild oder Datei", "Link zu Notiz", "Datum heute"]);
   await expect(page.locator(".sm-kopf")).toHaveText(["Text", "Listen", "Blöcke", "Einfügen"]);
   await expect(page.locator(".sm [role=listbox]")).toHaveCount(1);
   await expect(page.locator(".sm [role=option][aria-selected=true]")).toHaveCount(1);
@@ -106,6 +106,7 @@ const WAHL = [
   { name: "Aufzählung", tippe: "aufz", erwartet: ANFANG + "- " },
   { name: "Nummerierung", tippe: "nummer", erwartet: ANFANG + "1. " },
   { name: "Zitat", tippe: "zitat", erwartet: ANFANG + "> " },
+  { name: "Callout", tippe: "callout", erwartet: ANFANG + "> [!note] \n> \n" },
   { name: "Codeblock", tippe: "codeblock", erwartet: ANFANG + "```\n\n```\n" },
   { name: "Trennlinie", tippe: "trenn", erwartet: ANFANG + "---\n" },
   { name: "Datum heute", tippe: "datum", erwartet: () => ANFANG + heuteText() },
@@ -255,10 +256,12 @@ test("„Nichts gefunden“: eine Zeile, das Menü bleibt gleich hoch und an der
   await oeffne(page);
   await page.keyboard.type("/tab");
   await expect(eintraege(page)).toHaveCount(1);
+  await page.waitForTimeout(150); // die Lage wird nach dem Update gemessen: erst danach steht sie
   const vorher = await page.locator(".sm").boundingBox();
   await page.keyboard.type("x");
   await expect(page.locator(".sm-leer")).toHaveText("Nichts gefunden");
   await expect(eintraege(page)).toHaveCount(0);
+  await page.waitForTimeout(150);
   const nachher = await page.locator(".sm").boundingBox();
   expect(Math.abs(nachher.height - vorher.height)).toBeLessThanOrEqual(1);
   expect(Math.abs(nachher.y - vorher.y)).toBeLessThanOrEqual(1);
