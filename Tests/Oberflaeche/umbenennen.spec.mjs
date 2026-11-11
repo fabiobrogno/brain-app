@@ -183,6 +183,41 @@ test("Verschieben über den Ordner-Wähler: Suchen, Pfeiltasten, Enter; Verweise
   await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "20_projekte/Zutaten.md");
 });
 
+// Rennen (Wackler im Test oben unter Last): Die Werkstatt bündelt Live-Ereignisse; das Ereignis des eigenen Verschiebens kam erst nach dem „Rückgängig“ an
+// (oder noch einmal) und schob die offene Notiz an den alten Ort zurück. Erzwungen: das echte Ereignis des Verschiebens wird nach dem Rückgängig erneut zugestellt.
+test("Verschieben, Rückgängig, dann kommt das Live-Ereignis des eigenen Verschiebens (noch einmal) an: die offene Notiz bleibt, wo die Datei liegt", async ({ page }) => {
+  let gemerkt = null, nachspielen = false, wiedergegeben = false;
+  await page.route((u) => u.pathname === "/api/ereignisse", async (route) => {
+    try {
+      const r = await route.fetch();
+      let j = await r.json();
+      gemerkt ??= (j.ereignisse || []).find((e) => e.typ === "aktivitaet" && e.art === "datei-aktion" && e.pfade?.length === 2) || null;
+      if (nachspielen && gemerkt && j.ereignisse?.length) { nachspielen = false; wiedergegeben = true; j = { ...j, ereignisse: [gemerkt, ...j.ereignisse] }; }
+      await route.fulfill({ response: r, json: j });
+    } catch { await route.abort().catch(() => {}); } // der Long-Poll läuft beim Testende noch
+  });
+  await oeffne(page, "20_projekte/Zutaten.md");
+  await rechtsklick(page, karte(page, "20_projekte/Zutaten.md"));
+  await menueEintrag(page, "verschieben").click();
+  await expect(page.locator('[data-dialog="ordner-waehler"]')).toBeVisible();
+  await page.keyboard.type("abla");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "30_ablage/Zutaten.md");
+  await expect.poll(() => gemerkt?.pfade, { timeout: 10000 }).toEqual(["30_ablage/Zutaten.md", "20_projekte/Zutaten.md"]);
+  await toastMit(page, "Verschoben").locator("a").click();
+  await expect(toastMit(page, "Verschieben rückgängig gemacht")).toBeVisible();
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "20_projekte/Zutaten.md");
+  // Jeder Stand der Kopfzeile ab jetzt: auch ein kurzes Springen an den alten Ort zählt (was man dann tippt, ginge an den falschen Pfad)
+  await page.evaluate(() => { window.__pfade = []; const p = document.querySelector("#pfad"); new MutationObserver(() => window.__pfade.push(p.getAttribute("data-tipp-text") || p.title)).observe(p, { attributes: true, childList: true }); });
+  nachspielen = true;
+  schreib("30_ablage/Anstoss.md", "# Anstoß\n"); // ein frisches Ereignis, damit die nächste Antwort gleich kommt
+  await expect.poll(() => wiedergegeben, { timeout: 10000 }).toBe(true);
+  await expect(zeile(page, "30_ablage")).toHaveText(/30_ablage\s*2/); // dieselbe Antwort ist verarbeitet (der Baum kennt die neue Datei)
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "20_projekte/Zutaten.md");
+  expect(await page.evaluate(() => window.__pfade.filter((p) => p && p !== "20_projekte/Zutaten.md"))).toEqual([]);
+  expect(existsSync(join(vault, "20_projekte/Zutaten.md"))).toBe(true);
+});
+
 test("Ziehen und Ablegen: Notizkarte auf einen Ordner; ein Ordner auf einen Ordner; nicht in sich selbst", async ({ page }) => {
   await oeffne(page);
   await klappeAuf(page, "20_projekte");
