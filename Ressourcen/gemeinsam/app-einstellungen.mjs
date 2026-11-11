@@ -27,6 +27,8 @@ export const APP_SCHEMA = {
   codeSchrift: { werte: ["geist", "system", "menlo"], standard: "geist" },
   // Format-Leiste über markiertem Text im Editor (Runde 3b)
   formatLeiste: { typ: "boolean", standard: true },
+  // Zeilenumbrüche im Editor (Runde 4): aus = fest umbrochene Absätze wie getippt; an = als Fließtext, ohne beim Betreten aufzuklappen
+  zeilenFliessend: { typ: "boolean", standard: false },
   symbole: { werte: ["einfarbig", "farbig"], standard: "einfarbig" },
   // Seitenleiste durchscheinend (Fenstermaterial der Hülle; ohne Hülle-Fähigkeit blendet die Oberfläche die Zeile aus, der Wert bleibt gemerkt)
   seitenleisteDurchscheinend: { typ: "boolean", standard: true },
