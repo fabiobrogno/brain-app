@@ -7,7 +7,7 @@ import { erzeugeAnhaenge } from "./anhaenge.js"; // Bilder und Anhänge (Paket 3
 import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName, ohneEndung, ordnerVon, istBearbeitbar, speichereLokal, leseLokal, leseEntwurf, speichereEntwurf, sucheGrad, suchFormen, ausTabelle, arbeitBeginnt, laufendeArbeiten } from "./hilfen.js";
 import { symbol, GROESSE } from "./symbole.js";
 import { STANDARD as DARST_STANDARD, DARSTELLUNGS_SCHLUESSEL, wendeDarstellungAn, leseCache as leseDarstellungCache, schreibeCache as schreibeDarstellungCache, migriereAlteWahl } from "./darstellung.js"; // Farbschema, Akzent, Dichte, Schrift, Größe, Zeilenbreite, Symbole
-import { markiert, trefferKarte, chipLeiste, mitFilter } from "./suche.js";
+import { markiert, trefferKarte, chipLeiste, mitFilter, ohneMarkdown, nachAbdeckung } from "./suche.js";
 import { textfeld, textbereich, auswahl, hakenFeld, segment, knopf as baueKnopf, leerBlock, setzeLaedt, wenigBewegung, tooltip } from "./bausteine.js";
 import { liesKurzformen, faelligText } from "./kurzformen.js";
 import { kiLogo } from "./ki-logos.js";
@@ -154,8 +154,10 @@ document.querySelector('[data-t="kopfSuche"]').textContent = T.kopf.suche;
 function zeichneErfassenTaste() {
   const teile = kz.anzeigeTeile("schnell-erfassen");
   const kbd = $("fuss-merken").querySelector(".erfassen-taste");
-  const text = teile.length > 1 ? `${teile.slice(0, -1).join("")} ${teile[teile.length - 1]}` : teile.join("");
-  kbd.textContent = text; kbd.hidden = !teile.length;
+  // Das lange Wort der letzten Taste („Leertaste“) steht in eigenem Span: in der schmalen Seitenleiste fällt es weg (␣ bleibt), damit „Schnell erfassen“ nicht gekürzt wird
+  const letzte = teile[teile.length - 1] || "";
+  kbd.replaceChildren(...(teile.length > 1 ? [`${teile.slice(0, -1).join("")} `] : []), ...(letzte === "Leertaste" ? [h("span", { klasse: "taste-wort", text: letzte })] : [letzte]));
+  kbd.hidden = !teile.length;
   $("fuss-merken").title = teile.length ? `${T.seitenleiste.erfassen} (${teile.join("")})` : T.seitenleiste.erfassen;
   $("fuss-merken").setAttribute("aria-label", T.seitenleiste.erfassen);
 }
@@ -614,9 +616,9 @@ let dienstTimer = null, dienstVersuche = 0;
 function dienstWeg() {
   letzterFehler = TN.dienst.stand;
   zeigeStand("fehler", false, TN.dienst.stand);
-  if (!S.dienstWeg) { S.dienstWeg = true; toast(TN.dienst.meldung, { fehler: true, ms: 9000 }); }
+  if (!S.dienstWeg) { S.dienstWeg = true; toast(browserModus() && !imElectron() ? TN.dienst.meldungBrowser : TN.dienst.meldung, { fehler: true, ms: 9000 }); }
   journal.plane(); journal.schreibeJetzt(true);
-  if (dienstVersuche === 12) toast(TN.dienst.aufgegeben, { fehler: true, ms: 12000 });
+  if (dienstVersuche === 12) toast(browserModus() && !imElectron() ? TN.dienst.aufgegebenBrowser : TN.dienst.aufgegeben, { fehler: true, ms: 12000 });
   const pause = [1500, 3000, 6000, 12000][Math.min(dienstVersuche, 3)] * (dienstVersuche > 12 ? 2 : 1);
   dienstVersuche++;
   clearTimeout(dienstTimer);
@@ -1287,7 +1289,7 @@ function zeichneOrdner() {
       const offen = S.offen.has(c.pfad), hatKinder = c.kinder.length > 0;
       zeilen.push(h("div", { klasse: "zeile" + (arch ? " archiv" : ""), role: "treeitem", "aria-expanded": hatKinder ? String(offen) : null, "aria-current": S.sicht.art === "ordner" && S.sicht.id === c.pfad ? "true" : "false",
         style: `--tiefe:${t}`, "data-pfad": c.pfad, title: c.pfad, tabindex: "0", aufClick: () => waehleSicht({ art: "ordner", id: c.pfad }), aufContextmenu: (e) => da.ordnerMenue(e, c.pfad) },
-        h("span", { klasse: "pfeil" + (offen ? " offen" : "") + (hatKinder ? "" : " leer"), role: "button", "aria-label": offen ? "Zuklappen" : "Aufklappen",
+        h("span", { klasse: "pfeil" + (offen ? " offen" : "") + (hatKinder ? "" : " ohne"), role: "button", "aria-label": offen ? "Zuklappen" : "Aufklappen",
           aufClick: (ev) => { ev.stopPropagation(); offen ? S.offen.delete(c.pfad) : S.offen.add(c.pfad); lokal.schreib("offen", [...S.offen]); zeichneOrdner(); } }, symbol("chevron-rechts", 12)),
         (() => { const s = symbol(offen && hatKinder ? "ordner-offen" : "ordner", 16); s.classList.add("ordner-sym"); return s; })(),
         h("span", { klasse: "name", text: c.name }), h("span", { klasse: "dim", text: String(anzahl.get(c.pfad) || 0) })));
@@ -1352,11 +1354,11 @@ function baueKarte(n) {
     h("div", { klasse: "karte-kopf" },
       h("div", { klasse: "karte-titel", text: n.titel || T.liste.ohneTitel }),
       h("div", { klasse: "karte-marken" },
-        symbol(typ ? typSymbol(typ.symbol) : "notiz", 14),
+        typ ? symbol(typSymbol(typ.symbol), 14) : null, // das Dokument-Symbol trüge bei jeder gewöhnlichen Notiz dieselbe Aussage: nur ein besonderer Typ bekommt eins
         stufe ? h("span", { klasse: "punkt " + stufe, "data-punkt": n.pfad, title: T.stufen[stufe] || "" }) : null)),
     h("div", { klasse: "karte-vorschau", text: vorschauText(n.vorschau) }),
-    h("div", { klasse: "karte-fuss" }, h("span", { text: datumKurz(n.geaendert) }),
-      istZurueckgestellt(n) ? h("span", { klasse: "pe-marke", "data-spaeter": spaeterBis(n), text: T.posteingang.bis(datumKurz(spaeterBis(n))) }) : n.erstellt ? h("span", { text: `${T.liste.erstellt} ${datumKurz(n.erstellt)}` }) : null),
+    h("div", { klasse: "karte-fuss" }, h("span", { text: S.sortierung === "erstellt" && n.erstellt ? `${T.liste.erstellt} ${datumKurz(n.erstellt)}` : datumKurz(n.geaendert) }), // ein Datum: das der gewählten Sortierung
+      istZurueckgestellt(n) ? h("span", { klasse: "pe-marke", "data-spaeter": spaeterBis(n), text: T.posteingang.bis(datumKurz(spaeterBis(n))) }) : null),
     n.bereich === "inbox" && !n.generiert && S.sicht.art === "bereich" && S.sicht.id === "inbox" ? baueAktionen(n, posteingangCtx) : null,
     n.bereich === "inbox" && !n.generiert && S.sicht.art === "bereich" && S.sicht.id === "inbox" ? pkKi.bereich(n) : null); // Vorschläge (lokal und KI) unter dem Eintrag
   // Mit Vorschlagszeile darunter liegen die Aktionen in der Fußzeile (nicht am Ende der Karte): sie bleiben auch bei aufgeklappten Vorschlägen an derselben Stelle
@@ -1620,7 +1622,7 @@ function zeichneSuchergebnisse() {
   S.suche.treffer.forEach((t, i) => {
     const nz = S.nMap.get(t.pfad);
     const typ = nz?.typ ? (S.typMap.get(nz.typ) || { name: nz.typ }) : null;
-    const karte = trefferKarte(t, { i, ausgewaehlt: i === S.suche.auswahl, typ, symbolFuer: (ty) => symbol(ty ? typSymbol(ty.symbol) : "notiz", 14), oeffne: oeffneTreffer });
+    const karte = trefferKarte(t, { i, ausgewaehlt: i === S.suche.auswahl, typ, symbolFuer: (ty) => (ty ? symbol(typSymbol(ty.symbol), 14) : null), oeffne: oeffneTreffer });
     teile.push(typ ? setzeTypFarbe(karte, typ) : karte);
   });
   if (r.mehr) teile.push(h("div", { klasse: "such-mehr" }, baueKnopf({ text: TX.mehr, variante: "sekundaer", groesse: "s", aktion: "such-mehr", aufKlick: () => fuehreSucheAus({ mehr: true }) })));
@@ -1906,7 +1908,7 @@ async function ladeInfo({ leise = false } = {}) {
       reihe(T.eigenschaften.neuStand, h("span", { text: T.eigenschaften.neuNochNicht }), { leise: true, rechts: true, feld: "stand" })));
     zeichnePille(null); return;
   }
-  if (!pfad) { inhalt.append(h("div", { klasse: "info-leer", text: T.eigenschaften.leer })); zeichnePille(null); return; }
+  if (!pfad) { inhalt.append(leerBlock({ symbol: "seitenleiste", titel: T.eigenschaften.leerTitel, text: T.eigenschaften.leer, daten: { "data-info-leer": "" } })); zeichnePille(null); return; }
   const n = S.nMap.get(pfad);
   const wahrheit = sektion("pruefung", T.eigenschaften.wahrheit, h("div", { klasse: "status-karte" }, h("div", { klasse: "leise", text: T.eigenschaften.zuPruefen })));
   const feldSek = sektion("felder", null);
@@ -2862,7 +2864,7 @@ function oeffnePalette(vorgabe = "") {
           symbol("notiz", 16),
           h("div", { klasse: "pal-text" },
             h("div", { klasse: "pal-kopfzeile" }, h("span", { klasse: "n" }, ...markiert(e.t.titel || ohneEndung(dateiName(e.p)), e.t.titelMarken)), h("span", { klasse: "r", text: e.p })),
-            st ? h("div", { klasse: "pal-auszug" }, ...markiert(st.text, st.marken)) : (e.t.auszug ? h("div", { klasse: "pal-auszug", text: e.t.auszug }) : null))));
+            st ? h("div", { klasse: "pal-auszug" }, ...markiert(st.text, st.marken)) : (e.t.auszug ? h("div", { klasse: "pal-auszug", text: ohneMarkdown(e.t.auszug).text }) : null))));
         i++;
         continue;
       }
@@ -2891,7 +2893,7 @@ function oeffnePalette(vorgabe = "") {
       try {
         const r = await api.suche(q, { limit: 8, signal: inhaltCtl?.signal });
         if (nr !== inhaltNr || !document.body.contains(liste)) return;
-        inhalt = r.treffer || []; inhaltBegriffe = r.markieren || []; inhaltFrage = q;
+        inhalt = nachAbdeckung(r.treffer || []); inhaltBegriffe = r.markieren || []; inhaltFrage = q;
         // die Auswahl bleibt bei dem Eintrag, auf dem sie stand (die Inhalts-Treffer rücken vor „Anlegen“ und „Frag deinen Vault“)
         const key = (x) => (x ? `${x.typ}:${x.p || x.t || x.text || ""}` : "");
         const vorher = key(eintraege[idx]);

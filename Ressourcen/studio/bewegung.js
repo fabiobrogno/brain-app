@@ -167,6 +167,8 @@ export function kantenInstallieren() {
 // daraus zeigt EIN eigener Tooltip (.bs-tipp) nach 500 ms bei der Maus, sofort bei Tastaturfokus. Der zugängliche Name bleibt: ein Element ohne Text und ohne aria-label bekommt den Tipp als aria-label.
 // Ausnahmen (bewusst): <title> in SVG ist ein Element, kein Attribut; <iframe title> und <abbr> gibt es im Studio nicht.
 let tippEl = null, tippTimer = 0, tippAnker = null;
+// Zähler für den Test „im Editor tippen kostet den Beobachter nichts“: gezählt wird nur, was NICHT im Editor lag
+export const tippStatistik = { laeufe: 0, eintraege: 0, uebersprungen: 0, ms: 0 };
 function tippWeg() {
   clearTimeout(tippTimer);
   tippEl?.remove(); tippEl = null; tippAnker = null;
@@ -180,39 +182,73 @@ function nimmTitle(el) {
   if (!el.getAttribute("aria-label") && !el.getAttribute("aria-labelledby") && !el.textContent.trim() && !(el instanceof HTMLInputElement)) el.setAttribute("aria-label", t);
 }
 function nimmTitleBaum(wurzel) {
-  if (!(wurzel instanceof Element)) return;
+  if (!(wurzel instanceof Element) || wurzel.closest(".cm-editor")) return;
   if (wurzel.hasAttribute("title")) nimmTitle(wurzel);
   for (const el of wurzel.querySelectorAll("[title]")) nimmTitle(el);
 }
+// Menüs und Auswahllisten: ein Eintrag zeigt seinen Tooltip (Hinweis mit Kürzel) oder, wenn sein Text abgeschnitten ist, den ganzen Text
+const IM_MENUE = ".menue, .menue-geist, .bs-liste";
+const MENUE_EINTRAG = ".m-eintrag, .bs-opt";
+const gekappt = (el) => [el, ...el.querySelectorAll("*")].some((k) => k.scrollWidth > k.clientWidth + 1 && getComputedStyle(k).textOverflow === "ellipsis");
+function tippText(el) {
+  if (el.dataset.tippText) return el.dataset.tippText;
+  return el.matches(MENUE_EINTRAG) && gekappt(el) ? (el.querySelector(".bs-opt-text, .m-name")?.textContent || el.textContent).trim() : "";
+}
+function tippZiel(e) {
+  const t = e.target instanceof Element ? e.target : null;
+  if (!t) return null;
+  const eintrag = t.closest(MENUE_EINTRAG);
+  if (eintrag?.closest(IM_MENUE)) return tippText(eintrag) ? eintrag : null;
+  const mit = t.closest("[data-tipp-text]");
+  return mit && !mit.closest(IM_MENUE) ? mit : null;
+}
 function tippZeige(el) {
-  const text = el.dataset.tippText;
-  if (!text || !el.isConnected) return;
+  const text = el.isConnected ? tippText(el) : "";
+  if (!text) return;
   tippWeg();
   tippAnker = el;
   tippEl = h("div", { klasse: "bs-tipp", role: "tooltip", text });
   (document.getElementById("menue-host") || document.body).append(tippEl);
   const r = el.getBoundingClientRect(), bw = tippEl.offsetWidth, bh = tippEl.offsetHeight;
-  const unten = r.top - bh - 8 < 8;
-  tippEl.style.left = Math.round(Math.max(8, Math.min(r.left + r.width / 2 - bw / 2, window.innerWidth - bw - 8))) + "px";
-  tippEl.style.top = Math.round(unten ? r.bottom + 8 : r.top - bh - 8) + "px";
+  const menue = el.closest(IM_MENUE);
+  if (menue) { // neben dem Menü, nie über seinen Nachbareinträgen
+    const m = menue.getBoundingClientRect();
+    const rechts = m.right + 8 + bw <= window.innerWidth - 8;
+    tippEl.style.left = Math.round(rechts ? m.right + 8 : Math.max(8, m.left - bw - 8)) + "px";
+    tippEl.style.top = Math.round(Math.max(8, Math.min(r.top + r.height / 2 - bh / 2, window.innerHeight - bh - 8))) + "px";
+  } else {
+    const unten = r.top - bh - 8 < 8;
+    tippEl.style.left = Math.round(Math.max(8, Math.min(r.left + r.width / 2 - bw / 2, window.innerWidth - bw - 8))) + "px";
+    tippEl.style.top = Math.round(unten ? r.bottom + 8 : r.top - bh - 8) + "px";
+  }
   tippEl.getBoundingClientRect();
   tippEl.classList.add("offen");
 }
 export function tippsInstallieren() {
   nimmTitleBaum(document.documentElement);
-  new MutationObserver((ms) => { for (const m of ms) { if (m.type === "attributes") nimmTitle(m.target); else m.addedNodes.forEach(nimmTitleBaum); } })
-    .observe(document.documentElement, { attributes: true, attributeFilter: ["title"], childList: true, subtree: true });
-  const ziel = (e) => { const t = e.target instanceof Element ? e.target.closest("[data-tipp-text]") : null; return t && !t.closest(".menue, .bs-liste") ? t : null; };
+  // Der Editor (CodeMirror) ändert bei jedem Tastendruck seinen Baum: dort gibt es kein natives title (die Bausteine des Editors setzen data-tipp-text selbst), also bleibt er außen vor
+  new MutationObserver((ms) => {
+    const t0 = performance.now();
+    tippStatistik.laeufe++;
+    for (const m of ms) {
+      const ziel = m.target;
+      if (ziel instanceof Element && ziel.closest(".cm-editor")) { tippStatistik.uebersprungen++; continue; }
+      tippStatistik.eintraege++;
+      if (m.type === "attributes") nimmTitle(ziel); else m.addedNodes.forEach(nimmTitleBaum);
+    }
+    tippStatistik.ms += performance.now() - t0;
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ["title"], childList: true, subtree: true });
+  window.__tippStatistik = tippStatistik;
   document.addEventListener("pointerover", (e) => {
     if (e.pointerType === "touch") return;
-    const t = ziel(e);
+    const t = tippZiel(e);
     if (!t || t === tippAnker) return;
     tippWeg(); clearTimeout(tippTimer);
     tippTimer = setTimeout(() => tippZeige(t), 500);
   });
-  document.addEventListener("pointerout", (e) => { const t = ziel(e); if (t && !t.contains(e.relatedTarget)) tippWeg(); });
+  document.addEventListener("pointerout", (e) => { const t = tippZiel(e); if (t && !t.contains(e.relatedTarget)) tippWeg(); });
   document.addEventListener("pointerdown", tippWeg, true);
-  document.addEventListener("focusin", (e) => { const t = ziel(e); if (t && t.matches(":focus-visible")) tippZeige(t); });
+  document.addEventListener("focusin", (e) => { const t = tippZiel(e); if (t && t.matches(":focus-visible")) tippZeige(t); });
   document.addEventListener("focusout", tippWeg);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") tippWeg(); }, true);
   window.addEventListener("blur", tippWeg);

@@ -16,6 +16,7 @@
   transition: border-color var(--d-fast), background var(--d-fast), color var(--d-fast); }
 .erfassen-neu:hover { color: var(--text); border-color: var(--linie-stark); background: var(--hover); }
 @container seite (max-width: 236px) { .erfassen-taste { display: none; } }
+@container seite (max-width: 300px) { .erfassen-taste .taste-wort { display: none; } .erfassen-taste:has(.taste-wort)::after { content: "␣"; } }
 .gruppe { padding-bottom: 4px; }
 /* Zähler des Posteingangs: Akzent, solange etwas wartet (Prototyp) */
 .eintrag .zahl.akzent { background: var(--akzent); color: var(--akzent-text); padding: 0 6px; font-weight: 600; }

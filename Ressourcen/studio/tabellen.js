@@ -194,7 +194,7 @@ function baueDom(view, text) {
   for (let z = 1; z < m.zeilen.length; z++) { const tr = rumpf.insertRow(); m.zeilen[z].forEach((_, s) => tr.append(baueZelle(m, z, s))); }
   huelle.append(tab);
   const plus = document.createElement("button");
-  plus.type = "button"; plus.className = "cm-tab-plus"; plus.textContent = "+"; plus.title = T3.zeileHinzu; plus.setAttribute("aria-label", T3.zeileHinzu); plus.tabIndex = -1;
+  plus.type = "button"; plus.className = "cm-tab-plus"; plus.textContent = "+"; plus.dataset.tippText = T3.zeileHinzu; plus.setAttribute("aria-label", T3.zeileHinzu); plus.tabIndex = -1;
   plus.addEventListener("mousedown", (e) => e.preventDefault());
   plus.addEventListener("click", (e) => {
     e.preventDefault();

@@ -82,7 +82,7 @@ export const T = {
     ohne: "Keine Fakt-Zeilen mit Beleg-Format und keine offenen Signale. Das ist kein Beleg dafür, dass die Seite stimmt.",
     gelb: "Hier fehlt etwas oder ist abgelaufen.",
     rot: "Diese Seite enthält einen offenen Widerspruch.",
-    grau: "Eine Notiz. Erst /ingest macht daraus Wissen.",
+    grau: "Eine Notiz. Als Wissen zählt sie erst, wenn sie ins Wissen übernommen wurde.",
   },
   editor: {
     aufgabeOffen: "Aufgabe offen", aufgabeErledigt: "Aufgabe erledigt",
@@ -113,7 +113,7 @@ export const T = {
   eigenschaften: {
     titel: "Eigenschaften", schliessen: "Eigenschaften ausblenden", wahrheit: "Wahrheitsstatus", typ: "Typ", felder: "Felder", beziehungen: "Beziehungen", verweise: "Verweist auf", alleVerweise: (n) => `Alle ${n} anzeigen`, rueck: "Rückverweise", info: "Info", verlauf: "Verlauf",
     stand: "Stand", pruefenBis: "Prüfen bis", herkunft: "Herkunft", belege: "Belege", kritisch: "Kritisch", keinTyp: "Kein Typ", keineFelder: "Diese Notiz hat keinen Datei-Kopf.", keineBeziehungen: "Noch keine Verknüpfungen.",
-    geaendert: "Geändert", erstellt: "Erstellt", woerter: "Wörter", groesse: "Größe", offenEntfernt: "nicht gefunden", leer: "Wähle links eine Notiz, dann stehen hier ihre Eigenschaften.",
+    geaendert: "Geändert", erstellt: "Erstellt", woerter: "Wörter", groesse: "Größe", offenEntfernt: "nicht gefunden", leerTitel: "Keine Notiz offen", leer: "Öffne eine Notiz, dann stehen hier ihre Eigenschaften, Verknüpfungen und der Verlauf.",
     neu: "Neue Notiz", neuHinweis: "Die Datei entsteht, sobald etwas in der Notiz steht.", neuOrdner: "Ordner", neuStand: "Stand", neuNochNicht: "Noch nicht gespeichert",
     zuPruefen: "Wird geprüft …",
   },

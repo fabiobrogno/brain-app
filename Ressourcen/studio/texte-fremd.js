@@ -61,6 +61,9 @@ export const TN = {
     meldung: "Speichern gerade nicht möglich – Kortex startet den Hintergrunddienst neu. Dein Text bleibt erhalten.",
     wieder: "Der Hintergrunddienst läuft wieder. Dein Text ist gespeichert.",
     aufgegeben: "Der Hintergrunddienst startet nicht. Dein Text liegt im Entwurfs-Journal; starte Kortex neu, falls das bleibt.",
+    // Im Browser startet niemand den Dienst neu: Kortex wartet nur, bis er wieder antwortet
+    meldungBrowser: "Speichern gerade nicht möglich – der Hintergrunddienst antwortet nicht. Dein Text bleibt erhalten, Kortex versucht es weiter.",
+    aufgegebenBrowser: "Der Hintergrunddienst antwortet weiter nicht. Dein Text liegt im Entwurfs-Journal; starte Kortex im Browser neu, falls das bleibt.",
   },
   // ---- Automatische Fassungen
   auto: {

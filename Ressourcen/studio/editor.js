@@ -384,7 +384,7 @@ class SignalMarke extends GutterMarker {
   toDOM() {
     const d = document.createElement("span");
     d.className = "cm-signal cm-signal-" + (this.s.stufe || "gelb");
-    d.title = this.s.text || "";
+    d.dataset.tippText = this.s.text || ""; // kein natives title im Editor (Tooltips: bewegung.js)
     return d;
   }
 }

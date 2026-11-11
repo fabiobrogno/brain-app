@@ -41,7 +41,7 @@
 /* ---------- Auswahl (Knopf mit Wert + Chevron) ---------- */
 .bs-auswahl { display: inline-flex; min-width: 0; max-width: 100%; vertical-align: middle; }
 .bs-auswahl.breit { display: flex; width: 100%; }
-.bs-auswahl-knopf { display: inline-flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: var(--bs-h-m); padding: 0 8px 0 10px; border: 1px solid var(--bs-rand); border-radius: var(--r); background: var(--eingabe-grund); color: var(--text);
+.bs-auswahl-knopf { -webkit-appearance: none; appearance: none; display: inline-flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: var(--bs-h-m); padding: 0 8px 0 10px; border: 1px solid var(--bs-rand); border-radius: var(--r); background: var(--eingabe-grund); color: var(--text);
   font: 13px/1 var(--schrift); text-align: left; cursor: pointer; box-shadow: var(--schatten-klein); transition: border-color var(--d), box-shadow var(--d), background-color var(--d); }
 .bs-auswahl-knopf.bs-s { height: var(--bs-h-s); font-size: 12.5px; }
 .bs-auswahl-knopf:hover { border-color: var(--linie-stark); }

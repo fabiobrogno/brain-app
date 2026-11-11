@@ -3,7 +3,7 @@ const nz = (n, eins, viele) => `${n} ${n === 1 ? eins : viele}`;
 
 export const TE = {
   ein: {
-    titel: "Ungelinkte Erwähnungen",
+    titel: "Unverlinkte Erwähnungen",
     leer: "Keine Notiz nennt diesen Titel im Klartext, ohne zu verlinken.",
     laedt: "Suche läuft …",
     weiter: "Weitere Notizen werden geprüft …",

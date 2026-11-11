@@ -100,7 +100,7 @@ export function erzeugeTags(ctx) {
           "data-tag": c.name, title: TTG.zeile(c.name, c.anzahl), tabindex: "0",
           aufClick: () => ctx.waehleSicht({ art: "tag", id: c.name }), aufContextmenu: (e) => menue(e, c.name),
           aufKeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); ctx.waehleSicht({ art: "tag", id: c.name }); } } },
-          h("span", { klasse: "pfeil" + (istOffen ? " offen" : "") + (hatKinder ? "" : " leer"), role: "button", "aria-label": istOffen ? "Zuklappen" : "Aufklappen",
+          h("span", { klasse: "pfeil" + (istOffen ? " offen" : "") + (hatKinder ? "" : " ohne"), role: "button", "aria-label": istOffen ? "Zuklappen" : "Aufklappen",
             aufClick: (ev) => { ev.stopPropagation(); istOffen ? offen.delete(c.schl) : offen.add(c.schl); speichereOffen(); zeichne(); } }, symbol("chevron-rechts", 12)),
           h("span", { klasse: "tag-raute", "aria-hidden": "true", text: "#" }),
           h("span", { klasse: "name", text: c.label }), h("span", { klasse: "dim", text: String(c.anzahl) }));
