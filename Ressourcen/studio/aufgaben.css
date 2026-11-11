@@ -37,7 +37,7 @@
 .au-kurz-label { font-size: 11px; color: var(--text-3); }
 .au-kurz-chip { border: 0; cursor: pointer; font-family: inherit; }
 .au-kurz-chip:hover { background: var(--hover-stark, var(--hover)); }
-.au-kurz-chip:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+.au-kurz-chip:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
 .au-kurz-chip.prio.hoch, .au-kurz-chip.faellig { background: var(--akzent-weich); color: var(--akzent); }
 .au-kurz-chip.prio.hoch { background: var(--rot-weich); color: var(--rot); }
 .au-reset { margin-left: 2px; }

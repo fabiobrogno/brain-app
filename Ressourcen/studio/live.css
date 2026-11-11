@@ -21,5 +21,5 @@
 .toast-knopf:hover { background: var(--hover); color: var(--text); }
 .toast-knopf.primaer { background: var(--seite); color: var(--text); border: 1px solid var(--linie); }
 .toast-knopf.primaer:hover { background: var(--hover); }
-.toast-knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+.toast-knopf:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
 @media (max-width: 560px) { .toast.reich { flex-wrap: wrap; } .toast-aktionen { margin-left: auto; } }

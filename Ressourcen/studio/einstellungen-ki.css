@@ -10,7 +10,7 @@
 .e-zeigen { margin-left: auto; display: none; align-items: center; border: 0; background: transparent; font: inherit; font-size: 12px; color: var(--akzent-tinte); cursor: pointer; padding: 3px 8px; border-radius: 6px; white-space: nowrap; flex: none; }
 .suchmodus .e-zeigen { display: inline-flex; }
 .e-zeigen:hover { background: var(--hover-2); }
-.e-zeigen:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+.e-zeigen:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
 .kx-zeile.kx-mit-mini { grid-template-columns: 28px minmax(0, 1fr) 218px auto; }
 .kx-mini { min-width: 0; font-size: 12px; white-space: nowrap; }
 .kx-mini .kt-mini-text, .kx-mini .kt-mini-rest { white-space: nowrap; }
@@ -205,7 +205,7 @@
 .kx-filter { display: inline-flex; gap: 4px; }
 .kx-filter-knopf { height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--linie); background: transparent; font: inherit; font-size: 12px; color: var(--text-2); cursor: pointer; }
 .kx-filter-knopf[aria-pressed="true"] { background: var(--akzent-weich); border-color: var(--akzent-rand); color: var(--akzent-tinte); }
-.kx-filter-knopf:focus-visible, .kx-akt-alle:focus-visible, .kx-akt-zurueck:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+.kx-filter-knopf:focus-visible, .kx-akt-alle:focus-visible, .kx-akt-zurueck:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
 .kx-akt-alle { border: 0; background: transparent; font: inherit; font-size: 12px; color: var(--akzent-tinte); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
 .kx-akt-alle:hover { text-decoration: underline; }
 .kx-akt-liste { list-style: none; margin: 0; padding: 0; }

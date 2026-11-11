@@ -70,6 +70,8 @@ private func pfade() -> AppPfade { AppPfade(basis: tempOrdner("Support")) }
         guard let s = b.standard else { continue }
         let k = try #require(Tastenkuerzel(kanonisch: s), "\(b.id): \(s)")
         #expect(k.kanonisch == s)
+        // F6 und ⇧F6 (R4-3, nur im Studio) brauchen keinen Umschalter; globale Kürzel schon (die Prüfung der App bleibt streng)
+        if s == "F6" || s == "Shift+F6" { #expect(!b.global, "\(b.id): F-Tasten ohne ⌃/⌘ nur im Studio"); continue }
         #expect(KuerzelPruefung.pruefe(k, system: r.reserviertAlsSystem) == nil, "\(b.id): \(s) darf nicht reserviert sein")
     }
 }

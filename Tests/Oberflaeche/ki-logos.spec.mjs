@@ -23,12 +23,12 @@ test("Statusleiste und Einstellungsmenü zeigen das Claude-Logo mit Namen", asyn
   const st = page.locator('[data-st="claude"]').first();
   const logo = st.locator('[data-ki-logo="claude"]');
   await expect(logo).toBeVisible();
-  await expect(logo).toHaveAttribute("title", "Claude Code");
+  await expect(logo).toHaveAttribute("data-tipp-text", "Claude Code");
   await expect(logo.locator("svg")).toHaveCount(1);
   await page.locator('[data-st="einstellungen"]').first().click();
   const eintrag = page.locator('[data-menue="ki"]');
   await expect(eintrag.locator('[data-ki-logo="claude"]')).toBeVisible();
-  await expect(eintrag.locator('[data-ki-logo="claude"]')).toHaveAttribute("title", "Claude Code");
+  await expect(eintrag.locator('[data-ki-logo="claude"]')).toHaveAttribute("data-tipp-text", "Claude Code");
 });
 
 for (const schema of ["hell", "dunkel"]) {
