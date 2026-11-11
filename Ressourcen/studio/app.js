@@ -1900,6 +1900,12 @@ async function ladeInfo({ leise = false } = {}) {
   const nr = ++infoNr, pfad = S.pfad;
   const inhalt = infoGeruest(leise);
   const aufgaben = [];
+  if (!pfad && S.entwurf) { // neue, noch ungespeicherte Notiz (R4-2): eigene Info statt „Wähle links eine Notiz“
+    inhalt.append(sektion("neu", T.eigenschaften.neu, h("div", { klasse: "status-karte" }, h("p", { klasse: "stufe-text leise", text: T.eigenschaften.neuHinweis })),
+      reihe(T.eigenschaften.neuOrdner, h("span", { text: S.entwurf.ordner || "–" }), { symbol: "ordner", feld: "ordner" }),
+      reihe(T.eigenschaften.neuStand, h("span", { text: T.eigenschaften.neuNochNicht }), { leise: true, rechts: true, feld: "stand" })));
+    zeichnePille(null); return;
+  }
   if (!pfad) { inhalt.append(h("div", { klasse: "info-leer", text: T.eigenschaften.leer })); zeichnePille(null); return; }
   const n = S.nMap.get(pfad);
   const wahrheit = sektion("pruefung", T.eigenschaften.wahrheit, h("div", { klasse: "status-karte" }, h("div", { klasse: "leise", text: T.eigenschaften.zuPruefen })));

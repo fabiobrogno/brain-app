@@ -1,0 +1,76 @@
+/* Editor-Darstellung (R4-2): Callouts, Code-Blöcke mit Syntaxfarben, Platzhalter „Titel“, Rohzeile eines Bildes.
+   Nichts hier ändert Zeilenhöhe oder Einrückung zwischen Ansicht und Cursor-Zeile (Test: ruhe.spec.mjs). */
+
+/* ---------- Callouts ---------- */
+:root {
+  --co-note: #4f7be8; --co-abstract: #2a9d9a; --co-info: #2f8fd8; --co-todo: #2f8fd8; --co-tip: #12a38f; --co-success: #2f9e57;
+  --co-question: #c28a0a; --co-warning: #d4781a; --co-failure: #d4493f; --co-danger: #d63d4d; --co-bug: #d63d4d; --co-example: #8466d8; --co-quote: #7d838d;
+}
+:root[data-pal^="dunkel"], :root:not([data-pal])[data-theme="dark"] {
+  --co-note: #7b9cf5; --co-abstract: #4fc3bf; --co-info: #5cb2f0; --co-todo: #5cb2f0; --co-tip: #3fcdb7; --co-success: #5cc782;
+  --co-question: #e3b341; --co-warning: #f0a04b; --co-failure: #f0766d; --co-danger: #f0788a; --co-bug: #f0788a; --co-example: #aa94f0; --co-quote: #9aa0aa;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-pal]):not([data-theme="light"]) {
+    --co-note: #7b9cf5; --co-abstract: #4fc3bf; --co-info: #5cb2f0; --co-todo: #5cb2f0; --co-tip: #3fcdb7; --co-success: #5cc782;
+    --co-question: #e3b341; --co-warning: #f0a04b; --co-failure: #f0766d; --co-danger: #f0788a; --co-bug: #f0788a; --co-example: #aa94f0; --co-quote: #9aa0aa;
+  }
+}
+.cm-callout { --co: var(--co-note); position: relative; background: color-mix(in srgb, var(--co) 9%, transparent); border-left: 3px solid var(--co);
+  padding-left: 12px !important; padding-right: 36px !important; }
+.cm-callout-abstract { --co: var(--co-abstract); } .cm-callout-info { --co: var(--co-info); } .cm-callout-todo { --co: var(--co-todo); }
+.cm-callout-tip { --co: var(--co-tip); } .cm-callout-success { --co: var(--co-success); } .cm-callout-question { --co: var(--co-question); }
+.cm-callout-warning { --co: var(--co-warning); } .cm-callout-failure { --co: var(--co-failure); } .cm-callout-danger { --co: var(--co-danger); }
+.cm-callout-bug { --co: var(--co-bug); } .cm-callout-example { --co: var(--co-example); } .cm-callout-quote { --co: var(--co-quote); }
+.cm-callout-anfang { border-radius: 8px 8px 0 0; padding-top: 6px !important; }
+.cm-callout-ende { border-radius: 0 0 8px 8px; padding-bottom: 6px !important; }
+.cm-callout-anfang.cm-callout-ende { border-radius: 8px; }
+.cm-callout-marke { color: transparent; font-family: var(--schrift); font-weight: 400; } /* gleiche Breite wie das sichtbare „> “: der Text rutscht nie */
+.cm-callout-titel { font-weight: 600; color: var(--text); }
+.cm-callout-symbol { display: inline-flex; align-items: center; color: var(--co); vertical-align: top; height: 1.4em; line-height: 1; }
+.cm-callout-symbol > svg { flex: none; margin-right: 8px; }
+.cm-callout-symbol > .cm-callout-titel { color: var(--text); }
+.cm-callout-faltbar .cm-callout-symbol { cursor: pointer; }
+.cm-callout-pfeil { position: absolute; right: 10px; top: 6px; display: inline-flex; align-items: center; height: 1.4em; color: var(--text-3); cursor: pointer; border-radius: var(--r-s);
+  transition: transform var(--d-1) var(--ease-out), color var(--d-1) var(--ease-out); user-select: none; -webkit-user-select: none; }
+.cm-callout-pfeil:hover { color: var(--text); }
+.cm-callout-pfeil.zu { transform: rotate(-90deg); }
+
+/* ---------- Code-Blöcke ---------- */
+.cm-codeblock-anfang { position: relative; }
+.cm-code-kopf { position: absolute; right: 10px; top: 5px; display: inline-flex; align-items: center; gap: 4px; font-family: var(--schrift); font-size: 11.5px; line-height: 1;
+  color: var(--text-3); user-select: none; -webkit-user-select: none; }
+.cm-code-sprache { letter-spacing: .02em; padding: 0 2px; }
+.cm-code-kopieren { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r-s); cursor: pointer; color: var(--text-3);
+  opacity: .0; transition: opacity var(--d-1) var(--ease-out), background var(--d-1) var(--ease-out), color var(--d-1) var(--ease-out); }
+.cm-codeblock-anfang:hover .cm-code-kopieren, .cm-code-kopieren:focus, .cm-code-kopieren.kopiert { opacity: 1; }
+.cm-code-kopieren:focus-visible, .cm-callout-pfeil:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+.cm-code-kopieren:hover { background: var(--hover); color: var(--text); }
+.cm-code-kopieren.kopiert { color: var(--gruen); }
+@media (hover: none) { .cm-code-kopieren { opacity: 1; } }
+
+/* Syntaxfarben (je ≥ 4,5:1 auf --seite, geprüft in editor-darstellung.spec.mjs) */
+:root {
+  --syn-kw: #7c3aed; --syn-str: #176b3e; --syn-num: #a8470a; --syn-com: #5b6270; --syn-fn: #1d4ed8; --syn-def: #0b6a86; --syn-prop: #0e7490;
+  --syn-typ: #0f766e; --syn-tag: #be1f4d; --syn-op: #4b5563; --syn-meta: #8a4b08; --syn-bad: #c1121f;
+}
+:root[data-pal^="dunkel"], :root:not([data-pal])[data-theme="dark"] {
+  --syn-kw: #c4a7ff; --syn-str: #7ee0a6; --syn-num: #f0b36a; --syn-com: #8e949e; --syn-fn: #82b1ff; --syn-def: #7fd0ea; --syn-prop: #7fd1e8;
+  --syn-typ: #5ed1c5; --syn-tag: #ff8fa8; --syn-op: #a9afb8; --syn-meta: #f0b36a; --syn-bad: #ff7b72;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-pal]):not([data-theme="light"]) {
+    --syn-kw: #c4a7ff; --syn-str: #7ee0a6; --syn-num: #f0b36a; --syn-com: #8e949e; --syn-fn: #82b1ff; --syn-def: #7fd0ea; --syn-prop: #7fd1e8;
+    --syn-typ: #5ed1c5; --syn-tag: #ff8fa8; --syn-op: #a9afb8; --syn-meta: #f0b36a; --syn-bad: #ff7b72;
+  }
+}
+.syn-kw { color: var(--syn-kw); } .syn-str { color: var(--syn-str); } .syn-num { color: var(--syn-num); } .syn-com { color: var(--syn-com); font-style: italic; }
+.syn-fn { color: var(--syn-fn); } .syn-def { color: var(--syn-def); } .syn-prop { color: var(--syn-prop); } .syn-typ { color: var(--syn-typ); }
+.syn-tag { color: var(--syn-tag); } .syn-op { color: var(--syn-op); } .syn-meta { color: var(--syn-meta); } .syn-bad { color: var(--syn-bad); }
+
+/* ---------- Leere Titelzeile ---------- */
+.cm-platzhalter { color: var(--text-3); pointer-events: none; user-select: none; -webkit-user-select: none; }
+.cm-h1 .cm-platzhalter { font-weight: 650; }
+
+/* ---------- Neue Notiz: Info-Spalte ---------- */
+.info-neu { margin: 0 0 12px; }

@@ -89,6 +89,14 @@ export const T = {
     leerHinweis: "Oder lege eine neue an.",
     schreibschutz: "Diese Datei wird automatisch erzeugt und ist hier nur lesbar.",
     frontmatter: (n) => `Datei-Kopf · ${n} ${n === 1 ? "Feld" : "Felder"}`,
+    // Callouts (R4-2): Standardtitel je Art, Zustand des Faltens
+    callout: {
+      arten: { note: "Notiz", abstract: "Zusammenfassung", info: "Info", todo: "Aufgabe", tip: "Tipp", success: "Erfolg", question: "Frage", warning: "Warnung", failure: "Fehler", danger: "Gefahr", bug: "Fehlerbericht", example: "Beispiel", quote: "Zitat" },
+      aufklappen: "Aufklappen", zuklappen: "Zuklappen",
+    },
+    // Code-Blöcke (R4-2)
+    code: { kopieren: "Code kopieren", kopiert: "Kopiert", sprache: (n) => `Sprache: ${n}` },
+    titelPlatzhalter: "Titel",
     gespeichert: "Gespeichert",
     speichert: "Speichert …",
     ungespeichert: "Nicht gespeichert",
@@ -105,6 +113,7 @@ export const T = {
     titel: "Eigenschaften", schliessen: "Eigenschaften ausblenden", wahrheit: "Wahrheitsstatus", typ: "Typ", felder: "Felder", beziehungen: "Beziehungen", verweise: "Verweist auf", alleVerweise: (n) => `Alle ${n} anzeigen`, rueck: "Rückverweise", info: "Info", verlauf: "Verlauf",
     stand: "Stand", pruefenBis: "Prüfen bis", herkunft: "Herkunft", belege: "Belege", kritisch: "Kritisch", keinTyp: "Kein Typ", keineFelder: "Diese Notiz hat keinen Datei-Kopf.", keineBeziehungen: "Noch keine Verknüpfungen.",
     geaendert: "Geändert", erstellt: "Erstellt", woerter: "Wörter", groesse: "Größe", offenEntfernt: "nicht gefunden", leer: "Wähle links eine Notiz, dann stehen hier ihre Eigenschaften.",
+    neu: "Neue Notiz", neuHinweis: "Die Datei entsteht, sobald etwas in der Notiz steht.", neuOrdner: "Ordner", neuStand: "Stand", neuNochNicht: "Noch nicht gespeichert",
     zuPruefen: "Wird geprüft …",
   },
   info: {

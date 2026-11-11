@@ -6,13 +6,13 @@ export const TSM = {
   eintraege: {
     text: "Text", h1: "Überschrift 1", h2: "Überschrift 2", h3: "Überschrift 3",
     aufgabe: "Aufgabe", punkt: "Aufzählung", nummer: "Nummerierung",
-    zitat: "Zitat", code: "Codeblock", trennlinie: "Trennlinie", tabelle: "Tabelle",
+    zitat: "Zitat", callout: "Callout", code: "Codeblock", trennlinie: "Trennlinie", tabelle: "Tabelle",
     datei: "Bild oder Datei", notiz: "Link zu Notiz", datum: "Datum heute",
   },
   beschreibung: {
     text: "Normaler Absatz", h1: "Große Überschrift", h2: "Mittlere Überschrift", h3: "Kleine Überschrift",
     aufgabe: "Liste mit Kästchen", punkt: "Liste mit Punkten", nummer: "Liste mit Zahlen",
-    zitat: "Hervorgehobener Absatz", code: "Text in fester Schrift", trennlinie: "Waagerechte Linie", tabelle: "Zeilen und Spalten",
+    zitat: "Hervorgehobener Absatz", callout: "Farbiger Hinweiskasten", code: "Text in fester Schrift", trennlinie: "Waagerechte Linie", tabelle: "Zeilen und Spalten",
     datei: "Aus dem Dateidialog", notiz: "Verweis auf eine andere Notiz", datum: "Das heutige Datum",
   },
   // Suchwörter (Umlaute egal): deutsch und englisch
@@ -25,6 +25,7 @@ export const TSM = {
     punkt: ["liste", "aufzaehlung", "punkte", "bullet", "list"],
     nummer: ["nummeriert", "nummerierte liste", "zahlen", "numbered", "ordered", "liste"],
     zitat: ["quote", "blockquote", "zitieren"],
+    callout: ["hinweis", "hint", "notice", "kasten", "box", "info", "achtung", "warnung", "tipp", "tip", "admonition", "note", "warning"],
     code: ["codeblock", "code block", "quelltext", "snippet", "programm"],
     trennlinie: ["linie", "strich", "trenner", "divider", "hr", "rule", "line", "horizontal"],
     tabelle: ["table", "raster", "spalten", "zeilen", "grid"],
