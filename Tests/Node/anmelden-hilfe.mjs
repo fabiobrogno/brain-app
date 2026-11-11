@@ -49,10 +49,10 @@ const URL_CLAUDE = "https://claude.ai/oauth/authorize?code=true&client_id=testke
     else if (sz.modus === "umbrochen") { // wie Ink bei 80 Spalten: die Adresse bricht um, danach ruft das Programm BROWSER mit der ganzen Adresse
       console.log("If the browser didn't open, visit:\\n" + URL_CLAUDE.match(/.{1,80}/g).join("\\n"));
       await new Promise((r) => setTimeout(r, 400));
-      if (process.env.BROWSER) { try { cp.execFileSync(process.env.BROWSER, [URL_CLAUDE], { stdio: "ignore" }); } catch {} }
+      if (process.env.BROWSER) { try { if (/\\.cmd$/i.test(process.env.BROWSER)) cp.execSync('"' + process.env.BROWSER + '" "' + URL_CLAUDE + '"', { stdio: "ignore" }); else cp.execFileSync(process.env.BROWSER, [URL_CLAUDE], { stdio: "ignore" }); } catch {} }
     }
-    else if (process.env.BROWSER) { try { cp.execFileSync(process.env.BROWSER, [URL_CLAUDE], { stdio: "ignore" }); } catch {} }
-    else console.log("If the browser didn't open, visit: " + URL_CLAUDE); // ohne BROWSER (Windows: Kortex setzt dort kein BROWSER-Skript) gibt Claude die Adresse aus
+    else if (process.env.BROWSER) { try { if (/\\.cmd$/i.test(process.env.BROWSER)) cp.execSync('"' + process.env.BROWSER + '" "' + URL_CLAUDE + '"', { stdio: "ignore" }); else cp.execFileSync(process.env.BROWSER, [URL_CLAUDE], { stdio: "ignore" }); } catch {} }
+    else console.log("If the browser didn't open, visit: " + URL_CLAUDE); // ohne BROWSER gibt Claude die Adresse aus
   } else {
     console.log("Welcome to Codex\\n\\nFollow these steps to sign in with ChatGPT using device code authorization:\\n\\n1. Open this link in your browser and sign in to your account\\n   https://auth.openai.com/codex/device\\n\\n2. Enter this one-time code (expires in 15 minutes)\\n   ABCD-12345\\n\\nDevice codes are a common phishing target. Never share this code.\\n");
     console.error("access_token=" + GEHEIM); console.log("refresh_token: " + GEHEIM);

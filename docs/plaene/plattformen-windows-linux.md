@@ -506,10 +506,11 @@ Stand: Aus der Electron-Hülle werden installierbare Pakete — Windows NSIS, Li
 Beim ersten Bau zeigte sich: electron-builder legt die Installation pro Benutzer unter dem **Paketnamen** an (`Programs\kortex-electron`), nicht unter dem Produktnamen. `extraMetadata.name: "Kortex"` setzt den Ordner auf `Programs\Kortex`, `deb.packageName: "kortex"` den deb-Namen. Der deb-Test lief zuerst mit einer falschen Annahme (SUID-Bit 4755): electron-builders Nachinstallationsskript setzt das SUID-Bit nur, wenn User-Namensräume fehlen; der Test gibt den Modus nur noch aus.
 
 **Bekannt offen / nicht umgesetzt:**
-- **Hook-Starter** (`<Support>/bin/kortex`, Plan P7/A4): `verdrahtung.mjs` verlangt ihn für Hooks und Hintergrunddienst; unter Windows/Linux gibt es ihn noch nicht (Antwort „Der Starter von Kortex fehlt noch“). MCP und Statuszeile laufen ohne ihn über `bin/node` und `bin/kern`. Eigenes Paket (Windows `.cmd`, Linux Skript).
+- **Erledigt in R4-8 (siehe `runde-4.md` §8):** Hook-Starter (`bin/kortex`, Windows `kortex.cmd`), `BROWSER`-Skript, Named Pipe, Linux-Tray-Erkennung, Tray-Zeile „Aufgaben offen“, Vault-Name in Mitteilungen, Electron 45.1.0; Windows-Kern, Hülle und Paket sind Tor. Offen dort: Windows-Oberflächentests und die übersprungenen Pflege-Kerntests.
+- ~~**Hook-Starter** (`<Support>/bin/kortex`, Plan P7/A4):~~ (erledigt, Text zur Geschichte) `verdrahtung.mjs` verlangt ihn für Hooks und Hintergrunddienst; unter Windows/Linux gibt es ihn noch nicht (Antwort „Der Starter von Kortex fehlt noch“). MCP und Statuszeile laufen ohne ihn über `bin/node` und `bin/kern`. Eigenes Paket (Windows `.cmd`, Linux Skript).
 - Das Ersetzen des Programms beim Update (siehe oben) und echte Linux-Desktops (Wayland/Tray, AppImage-Integration) sind nicht in der CI geprüft.
 - Windows-Signatur, Veröffentlichen, SignPath-Antrag: bewusst nicht Teil des Pakets (`veroeffentlichen.md` §10).
-- Lizenzen im Paket: `LICENSE.electron.txt` und `LICENSES.chromium.html` von Electron liegen neben dem Programm, das Node-`LICENSE` in `resources/node`, `THIRD-PARTY-NOTICES.md` im Studio; die Liste nennt `electron-updater` und Electron noch nicht (Folgeaufgabe: Eintrag und Test `lizenzen.test.mjs`).
+- Lizenzen im Paket: `LICENSE.electron.txt` und `LICENSES.chromium.html` von Electron liegen neben dem Programm, das Node-`LICENSE` in `resources/node`, `THIRD-PARTY-NOTICES.md` im Studio; die Liste nennt `electron-updater` und Electron seit §12 (Test `lizenzen.test.mjs`).
 - Das AppImage ist mit 176 MB und das deb mit 140 MB groß (Node 128 MB roh); Einsparung (`strip`, gemeinsamer Electron-Node) ist Folgearbeit.
 - Ubuntu 24.04: AppImage braucht gelockerte User-Namensräume oder `--no-sandbox`; deb installiert den Sandbox-Helfer (siehe `veroeffentlichen.md`).
 

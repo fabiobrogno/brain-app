@@ -1,5 +1,5 @@
 // Wegwerf-Vault für die Oberflächentests (nur im Temp-Ordner).
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -23,7 +23,9 @@ const SEITEN = {
   "09_wiki/belege/kaffee-1.md": "# Beleg 1\n\nQuelle: Buch.\n",
 };
 export function baueVault({ leer = false, mitRemote = true } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "brain-studio-test-"));
+  // Windows legt Temp-Ordner in Kurzform an (C:\Users\RUNNER~1\…), die Werkstatt und git melden die Langform: Test und Server müssen DENSELBEN Pfad meinen (data-vault, Vergleiche) — darum gleich die Langform.
+  const roh = mkdtempSync(join(tmpdir(), "brain-studio-test-"));
+  const dir = process.platform === "win32" ? realpathSync.native(roh) : roh;
   const vault = join(dir, "vault");
   mkdirSync(vault);
   git(vault, "init", "-q", "-b", "main");

@@ -9,7 +9,10 @@ NODE=""
 if command -v node >/dev/null 2>&1; then NODE=node
 else
   S="${BRAIN_APP_SUPPORT:-$HOME/Library/Application Support/Kortex}"
-  for K in "$S/bin/node" "$HOME/Library/Application Support/Brain/bin/node" "$HOME/.brain-kit/node/bin/node" "$HOME/.brain-kit/node/node.exe" "$HOME/.brain-kit/node/bin/node.exe"; do
+  # Zuerst das Node neben dem Kern: der Kern liegt unter <Support>/bin/kern (stabiler Verweis) bzw. <Support>/kern/<Version>, das Node der App unter <Support>/bin/node[.exe]. Das gilt auf jedem System,
+  # auch dort, wo es kein System-Node gibt (Windows/Linux-Pakete bringen ihr eigenes mit). Danach die bekannten Orte je System (Mac, Linux ~/.local/share, Windows %APPDATA%) und das alte Kit.
+  for K in "$KERN_ORDNER/../node" "$KERN_ORDNER/../node.exe" "$KERN_ORDNER/../../bin/node" "$KERN_ORDNER/../../bin/node.exe" "$S/bin/node" "$S/bin/node.exe" \
+           "${XDG_DATA_HOME:-$HOME/.local/share}/Kortex/bin/node" "$APPDATA/Kortex/bin/node.exe" "$HOME/Library/Application Support/Brain/bin/node" "$HOME/.brain-kit/node/bin/node" "$HOME/.brain-kit/node/node.exe" "$HOME/.brain-kit/node/bin/node.exe"; do
     if [ -x "$K" ]; then NODE="$K"; break; fi
   done
 fi

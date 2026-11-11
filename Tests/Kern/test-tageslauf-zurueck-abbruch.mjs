@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync, chmodSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { isoliere, committe, neuerTestVault } from "./tageslauf-hilfe.mjs";
 import { tempOrdner } from "./verlauf-fixture.mjs";
 import { Zr, P, git, seitenText, JETZT, SEITE, MIT_STAND, MIT_FAKTEN, vault, seite, link, vo, simuliereLauf, simuliereAuftrag, fakt, stand, feld, aendertNichts, zustand } from "./zurueck-hilfe.mjs";
@@ -62,9 +62,9 @@ test("Vault nicht auf main → vault-nicht-auf-main", () => {
 test("/ingest läuft (frische Sperre) → ingest-laeuft, die fremde Sperre bleibt", () => {
   const v = vault();
   simuliereAuftrag(v, 1, (w) => fakt(w, "i1", "Alpha nutzt Port 3310."));
-  writeFileSync(join(v, ".logs", "ingest.lock"), "ingest 1\n");
+  writeFileSync(join(v, ".logs", "ingest.lock"), `ingest ${process.pid}\n`);
   assert.deepEqual(grundVon(nimm(v, { ids: ["i1"] })), [false, "ingest-laeuft"]);
-  assert.equal(readFileSync(join(v, ".logs", "ingest.lock"), "utf8"), "ingest 1\n");
+  assert.equal(readFileSync(join(v, ".logs", "ingest.lock"), "utf8"), `ingest ${process.pid}\n`);
 });
 
 test("Commit-Prüfung rot → pruefung-rot (die Prüfung wird nie umgangen)", () => {
@@ -73,7 +73,7 @@ test("Commit-Prüfung rot → pruefung-rot (die Prüfung wird nie umgangen)", ()
   const rot = tempOrdner("hook-rot");
   writeFileSync(join(rot, "pre-commit"), "#!/bin/sh\necho '- SECRETS: Testbefund'\nexit 2\n");
   chmodSync(join(rot, "pre-commit"), 0o755);
-  process.env.BRAIN_GIT_HOOKS_ERLAUBT = [process.env.BRAIN_GIT_HOOKS_ERLAUBT, realpathSync(rot)].filter(Boolean).join(":"); // der Kern führt Hooks nur aus Ordnern, die die Umgebung erlaubt (git-sicher)
+  process.env.BRAIN_GIT_HOOKS_ERLAUBT = [process.env.BRAIN_GIT_HOOKS_ERLAUBT, realpathSync(rot)].filter(Boolean).join(delimiter); // der Kern führt Hooks nur aus Ordnern, die die Umgebung erlaubt (git-sicher)
   git(v, "config", "core.hooksPath", realpathSync(rot));
   assert.deepEqual(grundVon(nimm(v, { ids: ["r1"] })), [false, "pruefung-rot"]);
 });

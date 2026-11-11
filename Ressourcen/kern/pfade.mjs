@@ -527,7 +527,7 @@ export function kernStabilOderEnde(opt = {}) {
 // KORTEX_STARTER_PFAD (nur mit KORTEX_KERN_UNSTABIL_ERLAUBT=1, für Tests) lenkt den Starter um.
 export function starterPfad({ env = process.env, tempWurzeln } = {}) {
   if (env.KORTEX_KERN_UNSTABIL_ERLAUBT === "1" && typeof env.KORTEX_STARTER_PFAD === "string" && isAbsolute(env.KORTEX_STARTER_PFAD)) return env.KORTEX_STARTER_PFAD;
-  return join(dirname(kernStabil({ env, tempWurzeln })), "kortex");
+  return join(dirname(kernStabil({ env, tempWurzeln })), process.platform === "win32" ? "kortex.cmd" : "kortex");
 }
 export class StarterFehltFehler extends Error {
   constructor(pfad) {
@@ -544,14 +544,17 @@ export function starterOderEnde(opt = {}) {
   return s;
 }
 // Befehlszeile für settings.json (POSIX-Shell): fehlt der Starter, Exit 0 ohne Ausgabe; sonst ersetzt der Starter die Shell (Exit-Code und stdin des Hooks bleiben erhalten).
-export function hookBefehl(starter, name, args = "") {
+// Windows (Claude Code führt Hooks dort mit Git Bash aus): der Starter ist die Stapeldatei kortex.cmd; `exec` gibt es für eine .cmd nicht verlässlich, darum if/else — der Exit-Code des Hooks
+// bleibt der des Befehls (kein `|| exit 0` dahinter, das einen blockierenden Hook verschlucken würde).
+export function hookBefehl(starter, name, args = "", plattform = process.platform) {
   if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`ungültiger Hook-Name: ${name}`);
   const q = shellQuote(fwd(starter), "linux");
+  if (plattform === "win32") return `if [ -f ${q} ]; then ${q} hook ${name}${args}; else exit 0; fi`;
   return `[ -x ${q} ] && exec ${q} hook ${name}${args} || exit 0`;
 }
 // Gehört dieser Befehl zu einem Kortex-Hook (neue Form, jeder Starter-Ort)? → Hook-Name oder null.
 export function hookNameAusBefehl(befehl) {
-  const m = typeof befehl === "string" ? /kortex' hook ([a-z][a-z0-9-]*)(?: |$)/.exec(befehl) : null;
+  const m = typeof befehl === "string" ? /kortex(?:\.cmd)?' hook ([a-z][a-z0-9-]*)(?: |;|$)/.exec(befehl) : null;
   if (m) return m[1];
   // Windows: kein Starter, der Befehl ruft node mit der Hook-Datei im Kern auf (install.mjs#hookCmd): `"<node>" "<kern>/adapters/claude-code/<name>.mjs"[ …]`
   const w = process.platform === "win32" && typeof befehl === "string" ? /\/adapters\/claude-code\/([a-z][a-z0-9-]*)\.mjs["']?(?: |$)/.exec(String(befehl).split("\\").join("/")) : null;

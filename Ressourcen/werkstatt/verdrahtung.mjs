@@ -14,6 +14,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { HttpFehler, kindUmgebung, testmodus } from "../gemeinsam/basis.mjs";
 import { starte, neueFrist } from "../gemeinsam/prozess.mjs";
+import { starterAufruf } from "../gemeinsam/plattform.mjs";
 import { erkenneProfile, profilZuPfad, mitProfil } from "./profile.mjs";
 
 const FRIST = 30_000;
@@ -27,8 +28,9 @@ export function erzeugeVerdrahtung({ starter, support = null, istVorschau = () =
     if (!vorhanden()) {
       throw new HttpFehler(409, "Der Starter von Kortex fehlt noch. Starte Kortex einmal neu, dann wird er angelegt — danach geht es hier weiter.", { art: "kein-starter" });
     }
-    return starte(starter, args, {
-      cwd: homedir(), env: profil === undefined ? kindUmgebung(support ? { BRAIN_APP_SUPPORT: support } : {}) : mitProfil(kindUmgebung(support ? { BRAIN_APP_SUPPORT: support } : {}), profil), timeout: FRIST, frist, fehlt: "Der Starter von Kortex wurde nicht gefunden.",
+    const a = starterAufruf(starter, args);
+    return starte(a.programm, a.args, {
+      cwd: homedir(), env: { ...(profil === undefined ? kindUmgebung(support ? { BRAIN_APP_SUPPORT: support } : {}) : mitProfil(kindUmgebung(support ? { BRAIN_APP_SUPPORT: support } : {}), profil)), ...a.env }, timeout: FRIST, frist, fehlt: "Der Starter von Kortex wurde nicht gefunden.",
       zuLange: "Das hat zu lange gedauert und wurde abgebrochen. Es wurde nichts Halbes hinterlassen — versuche es noch einmal.",
     });
   }

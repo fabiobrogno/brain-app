@@ -140,7 +140,7 @@ test("W1: Entwurfs-Journal — ungespeicherter Text überlebt das Neuladen; „U
   await page.keyboard.type("RETTE MICH");
   await expect.poll(() => entwuerfe().length, { timeout: 5000 }).toBe(1);
   const datei = entwuerfe()[0];
-  expect(statSync(datei).mode & 0o777).toBe(0o600);
+  if (process.platform !== "win32") expect(statSync(datei).mode & 0o777).toBe(0o600); // Windows kennt keine Unix-Dateirechte (die Datei liegt im Profil des Benutzers)
   const j = JSON.parse(readFileSync(datei, "utf8"));
   expect(j.pfad).toBe(NOTIZ); expect(j.text).toContain("RETTE MICH"); expect(j.basisHash).toMatch(/^[0-9a-f]{64}$/);
   expect(lese(NOTIZ)).not.toContain("RETTE MICH");

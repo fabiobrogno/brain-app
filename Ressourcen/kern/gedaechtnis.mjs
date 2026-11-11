@@ -141,7 +141,7 @@ export function vaultSchluesselFormen(pfad) {
   const formen = [String(pfad)];
   try { formen.push(realpathSync(pfad)); } catch {}
   for (const f of formen) for (const n of ["NFC", "NFD"]) aus.add(FALTE(projektSchluessel(f.normalize(n))));
-  return [...aus].filter((k) => k.replace(/-/g, "") !== "");          // der Wurzel-Schlüssel „-“ ist kein Vault
+  return [...aus].filter((k) => k.replace(/-/g, "") !== "" && !/^[a-z]-+$/.test(k));          // der Wurzel-Schlüssel „-“ ist kein Vault
 }
 export function baueKontoPruefung(opt = {}) {
   const o = opt || {};
