@@ -57,7 +57,7 @@ export async function mockeV2(page, vault, { erzwingen = false, ueberschreibe = 
     if (!erzwingen) { try { const r = await route.fetch(); if (r.status() !== 404) return await route.fulfill({ response: r }); } catch { /* weiter mit Attrappe */ } }
     return route.fulfill({ json: bauer() }).catch(verworfen);
   };
-  await page.route("**/api/notizen", async (route) => {
+  await page.route(/\/api\/notizen(\?.*)?$/, async (route) => {
     if (!erzwingen) { try { const r = await route.fetch(); if (r.status() !== 404) return await route.fulfill({ response: r }); } catch { /* weiter mit Attrappe */ } }
     const notizen = ueberschreibe.notizen || baueIndex(vault);
     // Prüf-Stufe der Wiki-Seiten über die echte Prüf-Route (die gibt es schon)
@@ -69,7 +69,7 @@ export async function mockeV2(page, vault, { erzwingen = false, ueberschreibe = 
   });
   // Die Oberfläche holt Notizen/Typen/Ansichten mit EINEM Abruf (/api/index) und fällt auf die drei einzelnen Routen zurück, wenn es ihn nicht gibt. Die Attrappen
   // hier ersetzen die einzelnen Routen — also gibt es für diese Tests keinen /api/index (404 = „ältere Werkstatt"), und die Attrappen gelten wie bisher.
-  await page.route("**/api/index", (route) => route.fulfill({ status: 404, json: { fehler: "nicht gefunden" } }).catch(verworfen));
+  await page.route(/\/api\/index(\?.*)?$/, (route) => route.fulfill({ status: 404, json: { fehler: "nicht gefunden" } }).catch(verworfen));
   await page.route("**/api/typen", (route) => versuche(route, () => ({ typen: ueberschreibe.typen || baueTypen(ueberschreibe.notizen || baueIndex(vault)) })));
   await page.route("**/api/ansichten", (route) => versuche(route, () => ({ ansichten: ueberschreibe.ansichten || [] })));
   await page.route("**/api/notiz/kontext**", (route) => versuche(route, () => {
@@ -119,8 +119,8 @@ export async function mockeVertrauen(page, { vertrauen = vertrauenAntwort(), pos
     stand.gitGesperrtAnfragen.push(name);
     return route.fulfill({ status: 409, json: { fehler: "Roher Backend-Text: Git ist gesperrt.", gitGesperrt: true } });
   });
-  await page.route("**/api/index", (route) => route.fulfill({ status: 404, json: { fehler: "nicht gefunden" } })); // Zähler und Antworten laufen über /api/notizen (siehe mockeV2)
-  await page.route("**/api/notizen", (route) => { stand.anfragen.notizen++; return route.fallback(); });
+  await page.route(/\/api\/index(\?.*)?$/, (route) => route.fulfill({ status: 404, json: { fehler: "nicht gefunden" } })); // Zähler und Antworten laufen über /api/notizen (siehe mockeV2)
+  await page.route(/\/api\/notizen(\?.*)?$/, (route) => { stand.anfragen.notizen++; return route.fallback(); });
   // Gesundheit und Rückfragen kommen aus dem gebündelten Kern und laufen auch ohne Vertrauen
   await page.route("**/api/gesundheit", (route) => { stand.anfragen.gesundheit++; return route.fulfill({ json: { ampel: "gruen", warnungen: [], pruefungen: [] } }); });
   await page.route("**/api/rueckfragen", (route) => route.fulfill({ json: { offen: 2 } }));
