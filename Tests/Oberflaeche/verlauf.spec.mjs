@@ -46,7 +46,9 @@ const SEITE = `<!doctype html><html lang="de"><head><meta charset="utf-8"><link 
 <div id="t-rahmen"><div id="t-seite"></div><section id="t-liste"><header id="t-kopf">Verlauf</header><div id="t-host"></div></section><main id="t-haupt"><div id="t-diff"></div></main></div>
 <div id="dialog-host"></div><div id="toast-host"></div></body></html>`;
 
-async function oeffneSeite(page, basis = server.url) {
+// Standard der Tests: „Technische Details“ an (Kürzel, Zähler); die Menschensprache-Tests (verlauf-menschensprache.spec.mjs) lassen es aus (R4-4)
+async function oeffneSeite(page, basis = server.url, { technisch = true } = {}) {
+  await page.addInitScript((an) => { try { localStorage.setItem("brain-studio.verlauf-technisch", an ? "true" : "false"); } catch { /* ohne Speicher */ } }, technisch);
   await page.route(/\/__verlauf-test\.html$/, (route) => route.fulfill({ contentType: "text/html", body: SEITE }));
   await page.goto(basis + "__verlauf-test.html");
   await page.evaluate(() => { window.__ruf = []; window.__offen = []; window.__ereignis = []; });
@@ -116,7 +118,8 @@ test("Liste: Tagesköpfe mit Zählung, Commit-Zeilen mit Zeit, Hash und Zählern
   await sichtbar(koepfe.first());
   await expect(koepfe.nth(0)).toContainText("(2 Commits)");
   await expect(koepfe.nth(1)).toContainText("(1 Commit)");
-  await expect(koepfe.nth(0)).toContainText(/^(Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag), \d{1,2}\. \p{L}+ \d{4}/u);
+  await expect(koepfe.nth(0)).toContainText(/^(Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag), \d{1,2}\. \p{L}+/u); // „Heute“ ohne Jahr (eine Zeile mit Merkmal und Zähler); die anderen Tage mit Jahr (R4-4)
+  await expect(koepfe.nth(1)).toContainText(/\d{4}/);
   const erste = page.locator(".vl-commitzeile:not(.ungesichert)").first();
   await sichtbar(erste);
   await expect(erste.locator(".vl-nachricht")).toHaveText("Notizen aktualisiert (3)");
@@ -295,6 +298,8 @@ test("Liste: Maße, Ladezustand, haftender Tageskopf, Fokusring", async ({ page 
   // Fokusring: Tab in die Liste, sichtbarer Rahmen
   await page.evaluate(() => { document.getElementById("t-host").scrollTop = 0; document.activeElement?.blur(); });
   await page.keyboard.press("Tab");
+  await expect(page.locator(".vl-tech")).toBeFocused(); // R4-4: zuerst der Schalter „Technische Details“, dann die Liste
+  await page.keyboard.press("Tab");
   const ring = await page.evaluate(() => { const e = document.activeElement; const c = getComputedStyle(e); return { art: e.dataset.art, ring: c.boxShadow !== "none" }; });
   expect(ring).toEqual({ art: "tag", ring: true }); // R4-3: ein Fokusring für alles (box-shadow), kein outline
 });
@@ -353,7 +358,7 @@ test("Liste: Commit ohne Dateien zeigt einen ruhigen Hinweis", async ({ page }) 
   await mocke(page, { status: { ...STATUS_A, geaendert: [] }, log: { tage: tage([commit(7, "Leerer Commit", vor(0, 8, 0), [])]) } });
   await oeffneSeite(page); await montiereListe(page);
   await page.locator(".vl-commitzeile", { hasText: "Leerer Commit" }).click();
-  await expect(page.locator(".vl-keine")).toHaveText("Keine Dateien in diesem Commit.");
+  await expect(page.locator(".vl-keine")).toHaveText("Keine Dateien in dieser Fassung.");
 });
 
 test("Liste: Mehr laden bei Fehler zeigt Hinweis und lässt es nochmal zu", async ({ page }) => {
@@ -444,7 +449,7 @@ for (const [wie, status] of [["Git-Status meldet gesperrt", { repo: true, gesper
     await mocke(page, { status });
     await page.route(/\/api\/git\/log(\?|$)/, (route) => route.fulfill({ status: 409, json: { fehler: "Roher Backend-Text: Git ist gesperrt.", gitGesperrt: true } }));
     await oeffneSeite(page); await montiereListe(page);
-    await expect(page.locator(".vl-leer-titel")).toHaveText("Git ist für diesen Vault gesperrt");
+    await expect(page.locator(".vl-leer-titel")).toHaveText("Die Versionierung ist für diesen Vault gesperrt");
     await expect(page.locator(".vl-leer")).not.toContainText("Roher Backend-Text");
   });
 }
@@ -844,4 +849,68 @@ test("Arbeit läuft: das Remote-Verbinden wird für vorSchliessen gemeldet", asy
   expect(await page.evaluate(async () => (await import("/hilfen.js")).laufendeArbeiten())).toEqual(["remote"]);
   await expect(dlg.locator(".rm-meldung.erfolg")).toBeVisible();
   expect(await page.evaluate(async () => (await import("/hilfen.js")).laufendeArbeiten())).toEqual([]);
+});
+
+// ================================================================= R4-4: Verlauf in Menschensprache
+const FOTO44 = process.env.R44_BILDER;
+const GIT_WORT = /\bcommits?\b|\bhash\b|\bbranch\b|\bHEAD\b|\bgit\b|[0-9a-f]{7}\b|[+~−]\d/i;
+test("Menschensprache: der Verlauf spricht von Fassungen, ohne Kürzel, Zähler und Git-Wörter; „Technische Details“ zeigt sie, und die Wahl bleibt", async ({ page }) => {
+  await mocke(page); await oeffneSeite(page, server.url, { technisch: false }); await montiereListe(page);
+  const koepfe = page.locator(".vl-tagkopf");
+  await sichtbar(koepfe.first());
+  await expect(koepfe.nth(0)).toContainText("(2 Fassungen)");
+  await expect(koepfe.nth(1)).toContainText("(1 Fassung)");
+  await expect(page.locator(".vl-hash, .vl-plus, .vl-aender, .vl-weg")).toHaveCount(0);
+  await expect(page.locator(".vl-commitzeile:not(.ungesichert)").first().locator(".vl-dateizahl")).toHaveText("3 Dateien");
+  await page.locator(".vl-commitzeile:not(.ungesichert)").first().click();
+  await expect(page.locator(".vl-datei").first()).toBeVisible();
+  // Datei-Marken: Symbol mit Hinweis statt Buchstabe; alle Tageszeilen einzeilig und gleich hoch (auch „Heute“ mit dem Zähler)
+  await expect(page.locator(".vl-datei .vl-marke.sym svg").first()).toBeVisible();
+  await expect(page.locator(".vl-datei .vl-marke").first()).toHaveText("");
+  await expect(page.locator(".vl-datei .vl-marke").nth(1)).toHaveAttribute("aria-label", "Neu");
+  const hoehen = await page.locator(".vl-tagkopf").evaluateAll((l) => l.map((e) => Math.round(e.getBoundingClientRect().height)));
+  expect(new Set(hoehen).size, "alle Datumszeilen gleich hoch: " + hoehen).toBe(1);
+  expect(hoehen[0]).toBeLessThanOrEqual(34);
+  const text = await page.locator("#t-host").innerText();
+  expect(text).not.toMatch(GIT_WORT);
+  expect(text).toContain("Fassungen");
+  const schalter = page.locator('.vl-tech[data-aktion="technisch"]');
+  await expect(schalter).toHaveText("Technische Details");
+  await expect(schalter).toHaveAttribute("aria-pressed", "false");
+  if (FOTO44) {
+    for (const [name, schema] of [["hell", "light"], ["dunkel", "dark"]]) {
+      await page.emulateMedia({ colorScheme: schema, reducedMotion: "reduce" }); await page.waitForTimeout(300);
+      await page.screenshot({ path: join(FOTO44, `r44-verlauf-${name}.png`) });
+    }
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+  }
+  await schalter.click();
+  await expect(schalter).toHaveAttribute("aria-pressed", "true");
+  await expect(schalter).toBeFocused();
+  await expect(koepfe.nth(0)).toContainText("(2 Commits)");
+  await expect(page.locator(".vl-commitzeile:not(.ungesichert)").first().locator(".vl-hash")).toHaveText(sha(1).slice(0, 7));
+  await expect(page.locator(".vl-commitzeile:not(.ungesichert)").first().locator(".vl-plus")).toHaveText("+1");
+  await expect(page.locator(".vl-datei .vl-marke").first()).toHaveText("M"); // mit „Technische Details“ die Buchstaben
+  if (FOTO44) { await page.waitForTimeout(300); await page.screenshot({ path: join(FOTO44, "r44-verlauf-technisch.png") }); }
+  // die Wahl bleibt: neu gezeichnet steht der Schalter weiter an
+  expect(await page.evaluate(() => localStorage.getItem("brain-studio.verlauf-technisch"))).toBe("true");
+  await montiereListe(page);
+  await expect(page.locator(".vl-tech")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".vl-hash").first()).toBeVisible();
+});
+
+test("Menschensprache: die Änderungsansicht zeigt ohne „Technische Details“ weder Kürzel noch Zeilenzahlen, mit ihnen beides", async ({ page }) => {
+  await mockeDiff(page); await oeffneSeite(page, server.url, { technisch: false }); await montiereDiff(page);
+  await expect(page.locator(".vd-nachricht")).toHaveText("Kaffee-Seite überarbeitet");
+  await expect(page.locator(".vd-hunk").first()).toBeVisible();
+  await expect(page.locator(".vd-hash")).toBeHidden();
+  await expect(page.locator(".vd-stat .vl-plus, .vd-stat .vl-weg")).toHaveCount(0);
+  // der Schalter gilt sofort, ohne neu zu öffnen (live)
+  await page.evaluate(() => { localStorage.setItem("brain-studio.verlauf-technisch", "true"); window.dispatchEvent(new Event("kortex-verlauf-technisch")); });
+  await expect(page.locator(".vd-hash")).toBeVisible();
+  await expect(page.locator(".vd-hash")).toHaveText("9c7d0e1");
+  await expect(page.locator(".vd-stat .vl-plus")).toHaveText("+5");
+  await page.evaluate(() => { localStorage.setItem("brain-studio.verlauf-technisch", "false"); window.dispatchEvent(new Event("kortex-verlauf-technisch")); });
+  await expect(page.locator(".vd-hash")).toBeHidden();
+  await expect(page.locator(".vd-stat .vl-plus")).toHaveCount(0);
 });

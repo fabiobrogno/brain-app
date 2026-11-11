@@ -10,6 +10,8 @@ import { knopf as baueKnopf, setzeLaedt } from "./bausteine.js";
 import { api } from "./api.js";
 import { TE } from "./texte-erwaehnungen.js";
 import { TD } from "./texte-dateiaktionen.js";
+import * as stapel from "./vorgang-stapel.js";
+import { isolateHistory } from "./vendor/codemirror.bundle.js"; // Verlinken im offenen Text ist EIN eigener Undo-Schritt
 import { erzeugeKiErwaehnungen } from "./erwaehnungen-ki.js"; // K4: „Mit KI prüfen“ (Badges und Filter über der Liste; verlinkt wird nie von der KI)
 
 // Vorher/Nachher um die Änderung herum zeigen (die Stelle steht sonst oft hinter dem Zeilenende des Auszugs)
@@ -62,22 +64,27 @@ export function erzeugeErwaehnungen(ctx) {
   }
 
   // ───────────── Rückgängig (Verlinken in anderen Notizen) über das Aktivitätsprotokoll ─────────────
-  async function zurueck(id, teilweise = false) {
-    if (!(await ctx.sichereVorWechsel())) return;
-    try { await api.aktivitaetRueckgaengig(id, undefined, teilweise); }
+  // Ergebnis: "ok" · "weg" (geht nie mehr) · "dialog" (Rückfrage offen) · "fehler" (später noch einmal versuchen)
+  async function zurueck(id, teilweise = false, wieder = false) {
+    if (!(await ctx.sichereVorWechsel())) return "fehler";
+    try { await (wieder ? api.aktivitaetWiederherstellen(id, undefined, teilweise) : api.aktivitaetRueckgaengig(id, undefined, teilweise)); }
     catch (e) {
       if (e.status === 409 && e.daten?.art === "geaendert" && !teilweise) {
         const n = (e.daten.dateien || []).length || 1;
         const d = dialog({ titel: TD.rueckgaengigGeaendert.titel, satz: TD.rueckgaengigGeaendert.satz(n), knoepfe: [
           baueKnopf({ text: TD.rueckgaengigGeaendert.abbrechen, aufKlick: () => d.schliessen() }),
-          baueKnopf({ text: TD.rueckgaengigGeaendert.knopf, variante: "primaer", aktion: "trotzdem", aufKlick: () => { d.schliessen(); zurueck(id, true); } })] });
-        return;
+          baueKnopf({ text: TD.rueckgaengigGeaendert.knopf, variante: "primaer", aktion: "trotzdem", aufKlick: () => { d.schliessen(); zurueck(id, true, wieder); } })] });
+        return "dialog";
       }
+      const weg = stapel.istEndgueltig(e);
+      if (weg) stapel.verwirf(id);
       toast(e.message, { fehler: true });
-      return;
+      return weg ? "weg" : "fehler";
     }
-    toast(TE.toast.zurueck, { ms: 5000 });
+    if (wieder) stapel.markiereWieder(id); else stapel.markiereZurueck(id, S.info?.vault, "verlinken");
+    toast(wieder ? "Wieder ausgeführt" : TE.toast.zurueck, { ms: 5000 });
     await nachAenderung();
+    return "ok";
   }
   async function nachAenderung(geaendert = []) {
     await ctx.ladeBaum?.();
@@ -94,7 +101,8 @@ export function erzeugeErwaehnungen(ctx) {
       const r = await api.verlinke({ ziel: zielPfad, stellen });
       const n = (r.dateien || []).reduce((a, d) => a + d.anzahl, 0);
       if (!n) { toast(TE.toast.nichtsVerlinkt); await nachAenderung(); return; }
-      toast(TE.toast.verlinkt(n, zielTitel), { ms: 9000, aktion: r.aktivitaetId ? { text: TE.toast.rueckgaengig, tun: () => zurueck(r.aktivitaetId) } : undefined });
+      if (r.aktivitaetId) stapel.merke({ id: r.aktivitaetId, art: "verlinken", vault: S.info?.vault, rueck: () => zurueck(r.aktivitaetId), wieder: () => zurueck(r.aktivitaetId, false, true) });
+      toast(TE.toast.verlinkt(n, zielTitel), { ms: 9000, kuerzel: TD.stapel.kzZurueck, aktion: r.aktivitaetId ? { text: TE.toast.rueckgaengig, tun: () => zurueck(r.aktivitaetId) } : undefined });
       if (r.uebersprungen?.length) toast(TE.toast.uebersprungen(r.uebersprungen.length), { ms: 5000 });
       await nachAenderung(r.geaendert || []);
     } catch (e) { toast(e.message, { fehler: true }); }
@@ -112,7 +120,8 @@ export function erzeugeErwaehnungen(ctx) {
         try { r = await api.verlinke({ ziel: zielPfad, alle: true, token: v.token }); }
         catch (e) { if (e.status === 409 && e.daten?.art === "vorschau-veraltet" && versuch === 0) { toast(TE.vorschau.veraltet); continue; } throw e; }
         const n = (r.dateien || []).reduce((a, d) => a + d.anzahl, 0);
-        toast(TE.toast.verlinkt(n, zielTitel), { ms: 9000, aktion: r.aktivitaetId ? { text: TE.toast.rueckgaengig, tun: () => zurueck(r.aktivitaetId) } : undefined });
+        if (r.aktivitaetId) stapel.merke({ id: r.aktivitaetId, art: "verlinken", vault: S.info?.vault, rueck: () => zurueck(r.aktivitaetId), wieder: () => zurueck(r.aktivitaetId, false, true) });
+        toast(TE.toast.verlinkt(n, zielTitel), { ms: 9000, kuerzel: TD.stapel.kzZurueck, aktion: r.aktivitaetId ? { text: TE.toast.rueckgaengig, tun: () => zurueck(r.aktivitaetId) } : undefined });
         await nachAenderung(r.geaendert || []);
         return;
       }
@@ -210,7 +219,7 @@ export function erzeugeErwaehnungen(ctx) {
   // Links in den offenen Text setzen (eine Änderung → ⌘Z geht); gibt { zurueckNehmen } zurück
   function setzeImEditor(aenderungen) {
     const view = ed.view, vor = view.state.doc;
-    const tr = view.state.update({ changes: aenderungen.map((a) => ({ from: a.start, to: a.ende, insert: a.link })), userEvent: "input.verlinken", scrollIntoView: false });
+    const tr = view.state.update({ changes: aenderungen.map((a) => ({ from: a.start, to: a.ende, insert: a.link })), userEvent: "input.verlinken", scrollIntoView: false, annotations: isolateHistory.of("full") });
     view.dispatch(tr);
     const inv = tr.changes.invert(vor), nach = view.state.doc;
     return () => {

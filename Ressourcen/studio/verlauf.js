@@ -11,6 +11,9 @@ const SEITE = 60;
 const MAX_SEITE = 200; // so viele Commits liefert /api/git/log höchstens je Aufruf
 const MAX_DIFF_ZEILEN = 4000;
 const UNGESICHERT = "__ungesichert";
+// „Technische Details“: Hashes, Zeilenzahlen und das Wort „Commit“ erscheinen nur, wenn man sie einschaltet (Standard: aus; gilt für Liste und Änderungsansicht).
+const TECHNISCH_SCHLUESSEL = "verlauf-technisch";
+export const leseTechnisch = () => leseLokal(TECHNISCH_SCHLUESSEL, false) === true;
 
 // ---------------------------------------------------------------- Stylesheet (lädt sich selbst, einmalig)
 const CSS_URL = new URL("./verlauf.css", import.meta.url).href;
@@ -46,10 +49,11 @@ export function relativeZeit(iso, jetzt = Date.now()) {
   return TV.zeit.jahre(Math.floor(tage / 365));
 }
 
-export function tagesTitel(datum) {
+// ohneJahr: für „Heute“/„Gestern“ – das Jahr ist dort klar, und die Zeile mit Merkmal und Zähler bleibt in der schmalen Spalte einzeilig
+export function tagesTitel(datum, { ohneJahr = false } = {}) {
   const d = new Date(String(datum) + "T12:00:00");
   if (Number.isNaN(d.getTime())) return String(datum);
-  return d.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  return d.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", ...(ohneJahr ? {} : { year: "numeric" }) });
 }
 const volleZeit = (iso) => {
   const d = new Date(iso);
@@ -136,7 +140,7 @@ const DIFFS = new WeakMap();
 export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGesperrt } = {}) {
   LISTEN.get(host)?.zerstoere();
   // naechste = „vor“-Wert für die nächste Seite, so wie die Werkstatt ihn liefert (fehlt er: der letzte geladene Commit)
-  const z = { phase: "laedt", fehler: null, tage: [], ungesichert: [], ende: false, naechste: null, laedtMehr: false, mehrFehler: false };
+  const z = { phase: "laedt", fehler: null, tage: [], ungesichert: [], ende: false, naechste: null, laedtMehr: false, mehrFehler: false, technisch: leseTechnisch() };
   const eingeklappt = new Set();   // Tage (Datum), die zu sind
   const offen = new Set();         // Commits (sha), die aufgeklappt sind
   let gewaehlt = null;             // Schlüssel der gewählten Datei
@@ -162,6 +166,7 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
       teile.push(leerBlock("warnung", TV.fehler.titel, roh ? TV.roh.verlauf : (z.fehler || TV.fehler.text), { nochmal: true, details: roh ? z.fehler : null }));
     }
     else {
+      teile.push(technischSchalter());
       if (z.ungesichert.length) teile.push(h("div", { klasse: "vl-ungesichert" }, commitBlock(ungesichertCommit(), { ungesichert: true })));
       if (!z.tage.length) teile.push(leerBlock("verlauf", TV.leer.titel, TV.leer.text));
       for (const t of z.tage) teile.push(tagBlock(t));
@@ -172,6 +177,12 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
     markiere();
     if (fokusNach) fokussiere(wurzel.querySelector(`[data-schluessel="${CSS.escape(fokusNach)}"]`));
     else if (hatteFokus) fokussiere(fokusKey && wurzel.querySelector(`[data-schluessel="${CSS.escape(fokusKey)}"]`) || wurzel.querySelector(".vl-zeile"));
+  }
+
+  function technischSchalter() {
+    const b = h("button", { klasse: "vl-tech", type: "button", "data-aktion": "technisch", "aria-pressed": String(z.technisch), text: TV.technisch.knopf });
+    b.addEventListener("click", () => { z.technisch = !z.technisch; speichereLokal(TECHNISCH_SCHLUESSEL, z.technisch); window.dispatchEvent(new Event("kortex-verlauf-technisch")); zeichne({ fokusNach: null }); wurzel.querySelector(".vl-tech")?.focus(); });
+    return h("div", { klasse: "vl-tech-zeile" }, b, h("span", { klasse: "vl-tech-hinweis", text: TV.technisch.hinweis }));
   }
 
   const ungesichertCommit = () => ({
@@ -204,9 +215,9 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
     const zu = eingeklappt.has(t.datum);
     const kopf = h("div", { klasse: "vl-zeile vl-tagkopf", role: "treeitem", "aria-level": "1", "aria-expanded": String(!zu), tabindex: "-1", "data-art": "tag", "data-schluessel": "tag:" + t.datum, "data-datum": t.datum },
       h("span", { klasse: "vl-chev" }, zeichen("chevron-unten", 12)),
-      h("span", { klasse: "vl-tagtext", text: tagesTitel(t.datum) }),
+      h("span", { klasse: "vl-tagtext", text: tagesTitel(t.datum, { ohneJahr: !!tagesLabel(t.datum) }) }),
       tagesLabel(t.datum) ? h("span", { klasse: "vl-tagrel", text: tagesLabel(t.datum) }) : null,
-      h("span", { klasse: "vl-tagzahl", text: TV.tagZahl(t.commits.length) }));
+      h("span", { klasse: "vl-tagzahl", text: TV.tagZahl(t.commits.length, z.technisch) }));
     const gruppe = h("div", { klasse: "vl-gruppe vl-commits", role: "group", hidden: zu }, t.commits.map((c) => commitBlock(c)));
     return h("section", { klasse: "vl-tag" }, kopf, gruppe);
   }
@@ -219,10 +230,12 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
       : [
         c.zeit ? h("span", { klasse: "vl-zeit", title: volleZeit(c.zeit), text: relativeZeit(c.zeit) }) : null,
         c.autor ? h("span", { klasse: "vl-autor", title: TV.von(c.autor), text: c.autor }) : null,
-        h("span", { klasse: "vl-hash", text: c.kurz }),
-        c.plus > 0 ? h("span", { klasse: "vl-plus", title: TV.zaehlerPlus(c.plus), text: "+" + c.plus }) : null,
-        c.geaendert > 0 ? h("span", { klasse: "vl-aender", title: TV.zaehlerAender(c.geaendert), text: "~" + c.geaendert }) : null,
-        c.geloescht > 0 ? h("span", { klasse: "vl-weg", title: TV.zaehlerWeg(c.geloescht), text: "−" + c.geloescht }) : null,
+        ...(z.technisch ? [
+          h("span", { klasse: "vl-hash", text: c.kurz }),
+          c.plus > 0 ? h("span", { klasse: "vl-plus", title: TV.zaehlerPlus(c.plus), text: "+" + c.plus }) : null,
+          c.geaendert > 0 ? h("span", { klasse: "vl-aender", title: TV.zaehlerAender(c.geaendert), text: "~" + c.geaendert }) : null,
+          c.geloescht > 0 ? h("span", { klasse: "vl-weg", title: TV.zaehlerWeg(c.geloescht), text: "−" + c.geloescht }) : null,
+        ] : [c.dateien.length ? h("span", { klasse: "vl-dateizahl", text: TV.dateien(c.dateien.length) }) : null]),
       ];
     const zeile = h("div", { klasse: "vl-zeile vl-commitzeile" + (ungesichert ? " ungesichert" : ""), role: "treeitem", "aria-level": ungesichert ? "1" : "2", "aria-expanded": String(auf), "aria-label": ungesichert ? `${TV.ungesichert} · ${c.dateien.length}` : undefined, tabindex: "-1", "data-art": "commit", "data-schluessel": "c:" + key, "data-sha": c.sha || "", title: c.nachricht || undefined },
       h("span", { klasse: "vl-knoten" + (ungesichert ? " ungesichert" : "") }, ungesichert ? zeichen("stift", 14) : avatar(c.autor)),
@@ -237,13 +250,20 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
     return h("div", { klasse: "vl-commit" }, zeile, dateien);
   }
 
+  // Ohne „Technische Details“ ein kleines Symbol (neu: Plus, geändert: Stift, gelöscht: Papierkorb, umbenannt: Pfeil) mit Hinweis; mit ihnen der Buchstabe der Versionsverwaltung
+  function statusMarke(st) {
+    const klasse = "vl-marke vs-" + st.toLowerCase();
+    if (z.technisch) return h("span", { klasse, "aria-label": TV.status[st], title: TV.status[st], text: TV.statusBuchstabe[st] });
+    return h("span", { klasse: klasse + " sym", role: "img", "aria-label": TV.status[st], title: TV.status[st] }, zeichen(TV.statusSymbol[st] || "stift", 12));
+  }
+
   function fuelleDateien(gruppe, c) {
     gruppe.dataset.gebaut = "1";
     if (!c.dateien.length) { gruppe.replaceChildren(h("p", { klasse: "vl-keine", text: TV.keineDateien })); return; }
     gruppe.replaceChildren(...c.dateien.map((d) => {
       const key = "d:" + (c.sha || UNGESICHERT) + ":" + d.pfad;
       const zeile = h("div", { klasse: "vl-zeile vl-datei" + (d.status === "D" ? " weg" : ""), role: "treeitem", "aria-level": c.sha ? "3" : "2", "aria-selected": String(gewaehlt === key), tabindex: "-1", "data-art": "datei", "data-schluessel": key, "data-pfad": d.pfad, "data-status": d.status, title: d.pfad + " · " + (TV.status[d.status] || "") },
-        h("span", { klasse: "vl-marke vs-" + d.status.toLowerCase(), "aria-label": TV.status[d.status], text: TV.statusBuchstabe[d.status] }),
+        statusMarke(d.status),
         h("span", { klasse: "vl-dname" }, dateiNamen(d.pfad, { name: "vl-dtitel", ordner: "vl-dordner" })));
       zeile._d = { commit: c, datei: d };
       return zeile;
@@ -537,7 +557,14 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
   const ungesichert = !sha;
   const o = ordnerVon(pfad || "");
   const kannWieder = !ungesichert && status !== "D";
+  let technisch = leseTechnisch();
   const stat = h("span", { klasse: "vd-stat" });
+  const hashEl = h("span", { klasse: "vd-hash", text: kurz || "", hidden: !technisch });
+  let statKnoten = [];
+  const zeigeStat = () => setze(stat, technisch ? statKnoten : []);
+  // der Schalter „Technische Details“ gilt sofort, auch bei offener Änderungsansicht
+  const beiSchalter = () => { technisch = leseTechnisch(); hashEl.hidden = !technisch; zeigeStat(); };
+  window.addEventListener("kortex-verlauf-technisch", beiSchalter);
 
   const zurueck = h("button", { klasse: "vd-zurueck", type: "button", "data-aktion": "diff-zu" }, zeichen("pfeil-links", 14), h("span", { text: TV.diff.zurueck }));
   const wieder = kannWieder
@@ -559,7 +586,7 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
         ungesichert
           ? h("span", { klasse: "vd-ungesichert", text: TV.ungesichert })
           : [
-            h("span", { klasse: "vd-hash", text: kurz || "" }),
+            hashEl,
             nachricht ? h("span", { klasse: "vd-nachricht", text: nachricht }) : null,
             zeit ? h("span", { klasse: "vd-zeit", title: volleZeit(zeit), text: relativeZeit(zeit) }) : null,
           ],
@@ -599,9 +626,10 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
     if (d.binaer && !d.zeilen.some((x) => x.art !== "k")) { koerper.replaceChildren(h("p", { klasse: "vd-hinweis", text: TV.diff.keinText })); return; }
     const gesamt = d.zeilen.length;
     const gezeigt = d.zeilen.slice(0, MAX_DIFF_ZEILEN);
-    setze(stat,
+    statKnoten = [
       d.plus ? h("span", { klasse: "vl-plus", title: TV.diff.plusZeilen(d.plus), text: "+" + d.plus }) : null,
-      d.minus ? h("span", { klasse: "vl-weg", title: TV.diff.minusZeilen(d.minus), text: "−" + d.minus }) : null);
+      d.minus ? h("span", { klasse: "vl-weg", title: TV.diff.minusZeilen(d.minus), text: "−" + d.minus }) : null];
+    zeigeStat();
     geparst = { gesamt }; gezeigtZeilen = gezeigt;
     umschalter.hidden = false;
     zeichneKoerper();
@@ -616,6 +644,7 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
   const instanz = {
     zerstoere() {
       tot = true;
+      window.removeEventListener("kortex-verlauf-technisch", beiSchalter);
       document.removeEventListener("keydown", taste);
       if (DIFFS.get(host) === instanz) DIFFS.delete(host);
       if (wurzel.parentNode === host) host.replaceChildren();

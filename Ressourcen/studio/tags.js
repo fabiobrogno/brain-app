@@ -7,6 +7,8 @@ import { knopf as baueKnopf, textfeld } from "./bausteine.js";
 import { oeffneMenue } from "./menue.js";
 import { api } from "./api.js";
 import { TTG } from "./texte-tags.js";
+import { TD } from "./texte-dateiaktionen.js";
+import * as stapel from "./vorgang-stapel.js";
 
 export const schluessel = (t) => String(t).normalize("NFC").toLowerCase();
 const TEIL = "[\\p{L}\\p{N}_-][\\p{L}\\p{M}\\p{N}_-]*"; // wie gemeinsam/tags.mjs (Marken, nie am Anfang)
@@ -201,18 +203,28 @@ export function erzeugeTags(ctx) {
     if (S.pfad && (erg.geaendert || []).includes(S.pfad)) await ctx.offeneNeuLaden();
     ctx.planeGit?.();
     ctx.nachAenderung?.({ speichern: true });
-    toast(TTG.toast.umbenannt(alt, neu, erg.notizen), { ms: 9000, aktion: erg.aktivitaetId ? { text: TTG.toast.rueckgaengig, tun: () => zurueck(erg.aktivitaetId, alt, neu) } : undefined });
+    if (erg.aktivitaetId) stapel.merke({ id: erg.aktivitaetId, art: "tag-umbenennen", vault: S.info?.vault, rueck: () => zurueck(erg.aktivitaetId, alt, neu), wieder: () => zurueck(erg.aktivitaetId, alt, neu, { wieder: true }) });
+    toast(TTG.toast.umbenannt(alt, neu, erg.notizen), { ms: 9000, kuerzel: TD.stapel.kzZurueck, aktion: erg.aktivitaetId ? { text: TTG.toast.rueckgaengig, tun: () => zurueck(erg.aktivitaetId, alt, neu) } : undefined });
   }
-  async function zurueck(id, alt, neu) {
-    if (!(await ctx.sichereVorWechsel())) return;
-    try { await api.aktivitaetRueckgaengig(id); }
-    catch (e) { toast(e.status === 409 ? TTG.toast.zurueckFehler : fehlerText(e), { fehler: true }); return; }
-    if (S.sicht.art === "tag" && unter(S.sicht.id, neu)) { S.sicht = { ...S.sicht, id: alt + S.sicht.id.slice(neu.length) }; ctx.merkeSicht?.(); }
+  // Ergebnis: "ok" · "weg" (geht nie mehr) · "fehler" (später noch einmal versuchen); wieder: Wiederholen statt Rückgängig
+  async function zurueck(id, alt, neu, { wieder = false } = {}) {
+    if (!(await ctx.sichereVorWechsel())) return "fehler";
+    try { await (wieder ? api.aktivitaetWiederherstellen(id) : api.aktivitaetRueckgaengig(id)); }
+    catch (e) {
+      const weg = stapel.istEndgueltig(e);
+      if (weg) stapel.verwirf(id);
+      toast(e.status === 409 ? TTG.toast.zurueckFehler : fehlerText(e), { fehler: true });
+      return weg ? "weg" : "fehler";
+    }
+    if (wieder) stapel.markiereWieder(id); else stapel.markiereZurueck(id, S.info?.vault, "tag-umbenennen");
+    const von = wieder ? alt : neu, nach = wieder ? neu : alt;
+    if (S.sicht.art === "tag" && unter(S.sicht.id, von)) { S.sicht = { ...S.sicht, id: nach + S.sicht.id.slice(von.length) }; ctx.merkeSicht?.(); }
     await ctx.ladeBaum();
     await laden();
     if (S.pfad) await ctx.offeneNeuLaden();
     ctx.nachAenderung?.({ speichern: true });
-    toast(TTG.toast.zurueck, { ms: 5000 });
+    toast(wieder ? "Wieder ausgeführt" : TTG.toast.zurueck, { ms: 5000 });
+    return "ok";
   }
 
   // ───────────── Befehlspalette ─────────────

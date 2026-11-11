@@ -174,7 +174,7 @@
 /* Schmale Spalte (Mindestgröße des Fensters): der Autor entfällt, damit Zeit, Kürzel und Zähler in einer Zeile bleiben (der Name steht im Tooltip und im Detail) */
 @container liste (max-width: 330px) { .vl-autor { display: none; } }
 .vl-hash::before { font-family: var(--schrift); }
-.vl-tagrel { flex: none; margin-left: 6px; height: 16px; padding: 0 6px; border-radius: var(--r-pille); background: var(--akzent-weich); color: var(--akzent); font-size: 10.5px; line-height: 16px; font-weight: 650; letter-spacing: .01em; }
+.vl-tagrel { flex: none; white-space: nowrap; margin-left: 6px; height: 16px; padding: 0 6px; border-radius: var(--r-pille); background: var(--akzent-weich); color: var(--akzent); font-size: 10.5px; line-height: 16px; font-weight: 650; letter-spacing: .01em; }
 .vl-commitzeile:focus-visible, .vl-datei:focus-visible { outline: 0; box-shadow: inset 0 0 0 2px var(--akzent); }
 
 /* Technische Details (aufklappbar, nie als Hauptsatz) */
@@ -305,3 +305,12 @@
   .ab-dialog *, .zh-dialog *, .seg *, .roh-details * { animation: none !important; transition: none !important; }
 }
 .ab-datei + * { clear: both; }
+
+/* Technische Details: ein ruhiger Schalter über der Liste (Standard aus: keine Kürzel, keine Zeilenzahlen) */
+.vl-dateizahl::before { content: "·"; margin-right: 8px; color: var(--text-3); }
+.vl-tech-zeile { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--linie); font-size: 12px; line-height: 16px; color: var(--text-2); }
+.vl-tech { flex: none; height: 24px; padding: 0 10px; border-radius: var(--r-pille); border: 1px solid var(--linie); background: transparent; color: var(--text-2); font: inherit; font-weight: 550; cursor: pointer; transition: background-color var(--t), color var(--t); }
+.vl-tech:hover { background: var(--hover); }
+.vl-tech[aria-pressed="true"] { background: var(--akzent-weich); color: var(--akzent); border-color: transparent; }
+.vl-tech:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
+.vl-tech-hinweis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); }
