@@ -38,8 +38,8 @@ export const formatiere = (k) => [...REIHE.filter((u) => k[u]), k.taste].join("+
 export const normalisiere = (text, register) => { const k = zerlege(text, register); return k ? formatiere(k) : null; };
 
 // Ein Kürzel muss ⌃ oder ⌘ enthalten: ⌥ und ⇧ allein erzeugen beim Tippen selbst Zeichen und würden das Schreiben stören.
-// Ausnahme: Funktionstasten (F1 bis F20) erzeugen kein Zeichen und brauchen keinen Umschalter (z. B. F6 für den Bereichswechsel).
-export const brauchtUmschalter = (k) => !(k.Ctrl || k.Cmd || /^F\d+$/.test(k.taste));
+// Ausnahme: Funktionstasten (F1 bis F20, auch mit ⇧) erzeugen kein Zeichen und brauchen keinen Umschalter (z. B. F6 für den Bereichswechsel); mit ⌥ gilt die Regel wie sonst.
+export const brauchtUmschalter = (k) => !(k.Ctrl || k.Cmd || (/^F\d+$/.test(k.taste) && !k.Alt));
 
 export function anzeigeTeile(text, register) {
   const k = zerlege(text, register);
