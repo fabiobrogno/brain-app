@@ -43,10 +43,10 @@
 
 /* ---------- Kopfzeile: Brotkrumen, Suchfeld, Knöpfe ---------- */
 .kopf { grid-area: kopf; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--linie); background: var(--papier); min-width: 0; container: kopf / inline-size; position: relative; z-index: 2; }
-/* Der Titel bleibt stehen: bei Platzmangel schrumpft zuerst das Suchfeld bis 150 px (Gewicht 100 gegen 0,01), erst danach die linke Gruppe bis 260 px */
-.kopf-links { flex: 1 0.01 auto; min-width: 260px; display: flex; align-items: center; gap: 4px; }
+/* Der Titel bleibt stehen: bei Platzmangel schrumpft zuerst das Suchfeld bis 150 px (Gewicht 10000×300 gegen 1×Inhalt – die linke Gruppe gibt dabei unter 0,1 px ab), danach die linke Gruppe. Gewicht der linken Gruppe NICHT unter 1: Ist die Summe der Gewichte < 1, verteilt CSS nur diesen Anteil des Mangels und der Rest ragt über den Rand. */
+.kopf-links { flex: 1 1 auto; min-width: 260px; display: flex; align-items: center; gap: 4px; }
 .kopf-rechts { flex: none; display: flex; align-items: center; gap: 2px; min-width: 0; }
-.kopf-suche { flex: 0 100 300px; min-width: 150px; /* schrumpft zuerst (Gewicht 100), erst danach der Titel */ display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px 0 10px; border: 1px solid var(--eingabe); background: var(--eingabe-grund); box-shadow: var(--schatten-klein); border-radius: var(--r);
+.kopf-suche { flex: 0 10000 300px; min-width: 150px; /* schrumpft zuerst, erst danach der Titel */ display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px 0 10px; border: 1px solid var(--eingabe); background: var(--eingabe-grund); box-shadow: var(--schatten-klein); border-radius: var(--r);
   cursor: pointer; text-align: left; color: var(--text-3); font-size: 13px; transition: border-color var(--d-fast), background var(--d-fast); }
 .kopf-suche:hover { border-color: var(--linie-stark); background: var(--hover); }
 .kopf-suche > .sym { color: var(--text-3); flex: none; }
