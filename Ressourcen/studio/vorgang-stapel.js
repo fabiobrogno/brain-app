@@ -30,6 +30,14 @@ export function markiereWieder(id) {
   zurueck = zurueck.filter((x) => x.id !== id);
   if (e) fertig = fertig.filter((x) => x.id !== id).concat(e);
 }
+// Ein Schritt ist nicht gelungen (Abgleich läuft, Netz weg, „Abbrechen“ im Dialog …): der Eintrag kommt oben zurück, der nächste Druck versucht denselben Vorgang noch einmal.
+export function legeZurueck(e, wieder = false) {
+  if (!e) return;
+  unterwegs = null;
+  if (wieder) zurueck = zurueck.filter((x) => x.id !== e.id).concat(e); else fertig = fertig.filter((x) => x.id !== e.id).concat(e);
+}
+// Fehler, nach denen es nie mehr geht: der Eintrag ist wirklich weg (alles andere kann beim nächsten Versuch klappen)
+export const istEndgueltig = (e) => e?.status === 404 || (e?.status === 409 && ["schon-zurueck", "nicht-zurueck", "keine-kopie"].includes(e?.daten?.art));
 export function verwirf(id) { fertig = fertig.filter((e) => e.id !== id); zurueck = zurueck.filter((e) => e.id !== id); }
 export const leeren = () => { fertig = []; zurueck = []; };
 export const stand = () => ({ fertig: fertig.length, zurueck: zurueck.length });

@@ -31,7 +31,23 @@ test("ein Vault-Wechsel verwirft beide Listen", () => {
   assert.deepEqual(s.stand(), { fertig: 0, zurueck: 0 });
 });
 
-test("ein Eintrag, der nicht geklappt hat (nicht markiert), ist weg; verwirf entfernt von beiden Seiten; der eigene Weg bleibt erhalten", () => {
+test("ein Schritt, der nicht klappt, legt seinen Eintrag oben zurück (nicht der vorige kommt dran); endgültige Fehler sind erkennbar", () => {
+  s.merke({ id: "1", art: "loeschen", vault: V });
+  s.merke({ id: "2", art: "loeschen", vault: V });
+  const e = s.nimmFertig(V); assert.equal(e.id, "2");
+  s.legeZurueck(e); // z. B. 409 beschaeftigt
+  assert.equal(s.nimmFertig(V).id, "2");
+  assert.equal(s.istEndgueltig({ status: 409, daten: { art: "beschaeftigt" } }), false);
+  assert.equal(s.istEndgueltig({ status: 0 }), false);
+  assert.equal(s.istEndgueltig({ status: 404 }), true);
+  assert.equal(s.istEndgueltig({ status: 409, daten: { art: "schon-zurueck" } }), true);
+  // Wiederholen: derselbe Weg auf der anderen Seite
+  s.leeren(); s.merke({ id: "3", art: "loeschen", vault: V });
+  s.markiereZurueck("3", V); const w = s.nimmZurueck(V); s.legeZurueck(w, true);
+  assert.equal(s.nimmZurueck(V).id, "3");
+});
+
+test("verwirf entfernt von beiden Seiten; der eigene Weg bleibt erhalten", () => {
   const rueck = () => {};
   s.merke({ id: "1", art: "tag-umbenennen", vault: V, rueck });
   const e = s.nimmFertig(V); assert.equal(e.rueck, rueck);

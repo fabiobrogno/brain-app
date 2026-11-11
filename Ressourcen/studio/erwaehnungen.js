@@ -64,22 +64,27 @@ export function erzeugeErwaehnungen(ctx) {
   }
 
   // ───────────── Rückgängig (Verlinken in anderen Notizen) über das Aktivitätsprotokoll ─────────────
-  async function zurueck(id, teilweise = false) {
-    if (!(await ctx.sichereVorWechsel())) return;
-    try { await api.aktivitaetRueckgaengig(id, undefined, teilweise); stapel.markiereZurueck(id, S.info?.vault, "verlinken"); }
+  // Ergebnis: "ok" · "weg" (geht nie mehr) · "dialog" (Rückfrage offen) · "fehler" (später noch einmal versuchen)
+  async function zurueck(id, teilweise = false, wieder = false) {
+    if (!(await ctx.sichereVorWechsel())) return "fehler";
+    try { await (wieder ? api.aktivitaetWiederherstellen(id, undefined, teilweise) : api.aktivitaetRueckgaengig(id, undefined, teilweise)); }
     catch (e) {
       if (e.status === 409 && e.daten?.art === "geaendert" && !teilweise) {
         const n = (e.daten.dateien || []).length || 1;
         const d = dialog({ titel: TD.rueckgaengigGeaendert.titel, satz: TD.rueckgaengigGeaendert.satz(n), knoepfe: [
           baueKnopf({ text: TD.rueckgaengigGeaendert.abbrechen, aufKlick: () => d.schliessen() }),
-          baueKnopf({ text: TD.rueckgaengigGeaendert.knopf, variante: "primaer", aktion: "trotzdem", aufKlick: () => { d.schliessen(); zurueck(id, true); } })] });
-        return;
+          baueKnopf({ text: TD.rueckgaengigGeaendert.knopf, variante: "primaer", aktion: "trotzdem", aufKlick: () => { d.schliessen(); zurueck(id, true, wieder); } })] });
+        return "dialog";
       }
+      const weg = stapel.istEndgueltig(e);
+      if (weg) stapel.verwirf(id);
       toast(e.message, { fehler: true });
-      return;
+      return weg ? "weg" : "fehler";
     }
-    toast(TE.toast.zurueck, { ms: 5000 });
+    if (wieder) stapel.markiereWieder(id); else stapel.markiereZurueck(id, S.info?.vault, "verlinken");
+    toast(wieder ? "Wieder ausgeführt" : TE.toast.zurueck, { ms: 5000 });
     await nachAenderung();
+    return "ok";
   }
   async function nachAenderung(geaendert = []) {
     await ctx.ladeBaum?.();
@@ -96,7 +101,7 @@ export function erzeugeErwaehnungen(ctx) {
       const r = await api.verlinke({ ziel: zielPfad, stellen });
       const n = (r.dateien || []).reduce((a, d) => a + d.anzahl, 0);
       if (!n) { toast(TE.toast.nichtsVerlinkt); await nachAenderung(); return; }
-      if (r.aktivitaetId) stapel.merke({ id: r.aktivitaetId, art: "verlinken", vault: S.info?.vault, rueck: () => zurueck(r.aktivitaetId) });
+      if (r.aktivitaetId) stapel.merke({ id: r.aktivitaetId, art: "verlinken", vault: S.info?.vault, rueck: () => zurueck(r.aktivitaetId), wieder: () => zurueck(r.aktivitaetId, false, true) });
       toast(TE.toast.verlinkt(n, zielTitel), { ms: 9000, kuerzel: TD.stapel.kzZurueck, aktion: r.aktivitaetId ? { text: TE.toast.rueckgaengig, tun: () => zurueck(r.aktivitaetId) } : undefined });
       if (r.uebersprungen?.length) toast(TE.toast.uebersprungen(r.uebersprungen.length), { ms: 5000 });
       await nachAenderung(r.geaendert || []);
@@ -115,7 +120,7 @@ export function erzeugeErwaehnungen(ctx) {
         try { r = await api.verlinke({ ziel: zielPfad, alle: true, token: v.token }); }
         catch (e) { if (e.status === 409 && e.daten?.art === "vorschau-veraltet" && versuch === 0) { toast(TE.vorschau.veraltet); continue; } throw e; }
         const n = (r.dateien || []).reduce((a, d) => a + d.anzahl, 0);
-        if (r.aktivitaetId) stapel.merke({ id: r.aktivitaetId, art: "verlinken", vault: S.info?.vault, rueck: () => zurueck(r.aktivitaetId) });
+        if (r.aktivitaetId) stapel.merke({ id: r.aktivitaetId, art: "verlinken", vault: S.info?.vault, rueck: () => zurueck(r.aktivitaetId), wieder: () => zurueck(r.aktivitaetId, false, true) });
         toast(TE.toast.verlinkt(n, zielTitel), { ms: 9000, kuerzel: TD.stapel.kzZurueck, aktion: r.aktivitaetId ? { text: TE.toast.rueckgaengig, tun: () => zurueck(r.aktivitaetId) } : undefined });
         await nachAenderung(r.geaendert || []);
         return;

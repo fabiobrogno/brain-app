@@ -903,10 +903,14 @@ test("Menschensprache: die Änderungsansicht zeigt ohne „Technische Details“
   await mockeDiff(page); await oeffneSeite(page, server.url, { technisch: false }); await montiereDiff(page);
   await expect(page.locator(".vd-nachricht")).toHaveText("Kaffee-Seite überarbeitet");
   await expect(page.locator(".vd-hunk").first()).toBeVisible();
-  await expect(page.locator(".vd-hash")).toHaveCount(0);
+  await expect(page.locator(".vd-hash")).toBeHidden();
   await expect(page.locator(".vd-stat .vl-plus, .vd-stat .vl-weg")).toHaveCount(0);
-  await page.evaluate(() => localStorage.setItem("brain-studio.verlauf-technisch", "true"));
-  await montiereDiff(page);
+  // der Schalter gilt sofort, ohne neu zu öffnen (live)
+  await page.evaluate(() => { localStorage.setItem("brain-studio.verlauf-technisch", "true"); window.dispatchEvent(new Event("kortex-verlauf-technisch")); });
+  await expect(page.locator(".vd-hash")).toBeVisible();
   await expect(page.locator(".vd-hash")).toHaveText("9c7d0e1");
   await expect(page.locator(".vd-stat .vl-plus")).toHaveText("+5");
+  await page.evaluate(() => { localStorage.setItem("brain-studio.verlauf-technisch", "false"); window.dispatchEvent(new Event("kortex-verlauf-technisch")); });
+  await expect(page.locator(".vd-hash")).toBeHidden();
+  await expect(page.locator(".vd-stat .vl-plus")).toHaveCount(0);
 });

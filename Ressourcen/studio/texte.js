@@ -1,5 +1,6 @@
 // Alle sichtbaren Texte der Oberfläche (Deutsch). Produktname nur hier.
 export const PRODUKT = "Kortex";
+const MAC_K = /Mac|iPhone|iPad/.test(typeof navigator === "undefined" ? "" : navigator.platform || ""); // Kürzel-Beschriftung je Plattform
 
 export const T = {
   produkt: PRODUKT,
@@ -123,8 +124,8 @@ export const T = {
     rueckverweise: "Rückverweise",
     keineSignale: "Keine Auffälligkeiten.",
     keinVerlauf: "Noch keine Fassungen gesichert.",
-    keinGit: "Ohne Git gibt es keinen Verlauf.",
-    gitGesperrt: "Git ist gesperrt, bis du diesem Vault vertraust.",
+    keinGit: "Ohne Versionsverlauf gibt es keine früheren Fassungen.",
+    gitGesperrt: "Der Verlauf ist gesperrt, bis du diesem Vault vertraust.",
     keineRueck: "Keine andere Seite verweist hierher.",
     wiederherstellen: "Diese Fassung wiederherstellen",
     wiederhergestellt: "Fassung zurückgeholt und gesichert. Der bisherige Verlauf bleibt erhalten.",
@@ -231,7 +232,7 @@ export const T = {
     fest: [
       { name: "Liste", zeilen: [["↑ ↓", "Nächste oder vorige Notiz öffnen"], ["↵", "In die Notiz springen"], ["F2", "Notiz oder Ordner umbenennen"], ["⌘ ⌫", "Notiz in den Papierkorb legen"]] },
       { name: "Aufgaben-Board", zeilen: [["↑ ↓", "Zwischen Karten wechseln"], ["← →", "In die Nachbarspalte"], ["⌥ ← → ↑ ↓", "Karte verschieben"], ["↵", "Notiz der Aufgabe öffnen"]] },
-      { name: "Rückgängig", zeilen: [["⌘ Z", "Im Text: Tippen zurücknehmen. Sonst: den letzten Vorgang (Papierkorb, Verschieben, Umbenennen) zurücknehmen"], ["⇧ ⌘ Z", "Wiederholen"]] },
+      { name: "Rückgängig", zeilen: [[MAC_K ? "⌘ Z" : "Strg Z", "Im Text: Tippen zurücknehmen. Sonst: den letzten Vorgang (Papierkorb, Verschieben, Umbenennen) zurücknehmen"], [MAC_K ? "⇧ ⌘ Z" : "Strg Y", "Wiederholen"]] },
       { name: "Esc", zeilen: [["Esc", "Schließt immer das Oberste: Menü, Dialog, Format-Leiste, Panel, Suche, Auswahl"]] },
     ],
     schliessen: "Schließen",

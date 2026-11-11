@@ -196,7 +196,7 @@ test("Git-Aktionen bei Sperre: nie der rohe Fehler, sondern die Frage; Verlauf u
   await page.keyboard.type("Kaffee");
   await page.keyboard.press("Enter");
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Kaffee");
-  await expect(page.locator('#info [data-sektion="verlauf"]')).toContainText("Git ist gesperrt, bis du diesem Vault vertraust.");
+  await expect(page.locator('#info [data-sektion="verlauf"]')).toContainText("Der Verlauf ist gesperrt, bis du diesem Vault vertraust.");
   await expect(page.locator('#info [data-sektion="verlauf"]')).not.toContainText("Roher Backend-Text");
 });
 
@@ -525,7 +525,7 @@ test("UI-4: nach dem Vertrauen laden Verlauf-Ansicht und Notiz-Verlauf neu (kein
   await page.keyboard.press("Enter");
   const block = page.locator("#liste-koerper .vl-leer");
   await expect(block.locator(".vl-leer-titel")).toHaveText("Die Versionierung ist für diesen Vault gesperrt");
-  await expect(page.locator('#info [data-sektion="verlauf"]')).toContainText("Git ist gesperrt, bis du diesem Vault vertraust.");
+  await expect(page.locator('#info [data-sektion="verlauf"]')).toContainText("Der Verlauf ist gesperrt, bis du diesem Vault vertraust.");
   // „Vertrauen prüfen“ → „Vertrauen“
   await block.locator('[data-aktion="vertrauen"]').click();
   await page.click('[data-aktion="vertrauen-erlauben"]');

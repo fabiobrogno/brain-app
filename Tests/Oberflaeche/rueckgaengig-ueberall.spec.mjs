@@ -45,17 +45,16 @@ test("Papierkorb: ⌘Z legt die Notiz zurück und öffnet sie wieder, ⇧⌘Z le
   await expect(toastMit(page, "In den Papierkorb gelegt").locator(".toast-kz")).toHaveText("⌘Z");
   expect(da("30_ablage/Einzelnes.md")).toBe(false);
   await expect(page.locator("#editor")).toBeHidden();
-  await ohneFokus(page);
-  await page.keyboard.press("Meta+z");
+  await page.keyboard.press("Meta+z"); // Fokus bleibt, wo er war (Liste bzw. nirgends): kein Zwischenschritt nötig
   await expect(toastMit(page, "Aus dem Papierkorb zurückgelegt")).toBeVisible();
   await expect(toastMit(page, "Aus dem Papierkorb zurückgelegt").locator(".toast-kz")).toHaveText("⇧⌘Z");
   await expect(karte(page, "30_ablage/Einzelnes.md")).toBeVisible();
   expect(lies("30_ablage/Einzelnes.md")).toBe("# Einzelnes\n\nNichts verlinkt hierher.\n");
   await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "30_ablage/Einzelnes.md"); // und ist wieder offen
   await expect(page.locator("#editor")).toBeVisible();
+  expect(await page.evaluate(() => !!document.activeElement?.closest?.(".cm-editor")), "der Fokus bleibt außerhalb des Editors").toBe(false);
   if (FOTO) { await page.waitForTimeout(500); await page.screenshot({ path: join(FOTO, "r44-toast-nach-cmdz.png") }); }
-  await ohneFokus(page); // die wieder geöffnete Notiz nimmt den Fokus: im Editor gilt der Editor-Stapel
-  await page.keyboard.press("Meta+Shift+z");
+  await page.keyboard.press("Meta+Shift+z"); // ohne Umweg: die wieder geöffnete Notiz hat den Fokus nicht an sich gerissen
   await expect(toastMit(page, "Wieder ausgeführt")).toBeVisible();
   await expect.poll(() => da("30_ablage/Einzelnes.md")).toBe(false);
   await expect(karte(page, "30_ablage/Einzelnes.md")).toHaveCount(0);
@@ -133,6 +132,92 @@ test("Fokus im Editor: ⌘Z nimmt nur Text zurück und lässt die Dateiaktion st
   expect(da("30_ablage/Zweites.md")).toBe(false); // die Dateiaktion wurde nicht berührt
   await page.waitForTimeout(300);
   expect(da("30_ablage/Zweites.md")).toBe(false);
+  await ohneFokus(page);
+  await page.keyboard.press("Meta+z");
+  await expect.poll(() => da("30_ablage/Zweites.md")).toBe(true);
+});
+
+test("Schlägt ein Schritt fehl (Abgleich läuft, Netz weg), bleibt sein Eintrag oben: das nächste ⌘Z nimmt denselben, nicht den vorigen zurück", async ({ page }) => {
+  await oeffne(page, "30_ablage/Einzelnes.md");
+  for (const n of ["Einzelnes", "Zweites"]) {
+    await karte(page, `30_ablage/${n}.md`).click();
+    await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", `30_ablage/${n}.md`);
+    await page.locator("#liste-koerper").focus();
+    await page.keyboard.press("Meta+Backspace");
+    await expect.poll(() => da(`30_ablage/${n}.md`)).toBe(false);
+  }
+  let n409 = 0;
+  await page.route((u) => u.pathname === "/api/aktivitaet/rueckgaengig", (route) => {
+    if (n409++ < 1) return route.fulfill({ status: 409, json: { fehler: "Gerade läuft ein Abgleich.", art: "beschaeftigt" } });
+    return route.continue();
+  });
+  await ohneFokus(page);
+  await page.keyboard.press("Meta+z");
+  await expect(toastMit(page, "Gerade läuft ein Abgleich")).toBeVisible();
+  expect(da("30_ablage/Zweites.md")).toBe(false);
+  await page.keyboard.press("Meta+z"); // jetzt geht es: der NEUESTE Vorgang (Zweites), nicht Einzelnes
+  await expect.poll(() => da("30_ablage/Zweites.md")).toBe(true);
+  expect(da("30_ablage/Einzelnes.md")).toBe(false);
+  await ohneFokus(page);
+  await page.keyboard.press("Meta+z");
+  await expect.poll(() => da("30_ablage/Einzelnes.md")).toBe(true);
+});
+
+test("Rückfrage „Seit dem … wurde weitergearbeitet“: Abbrechen lässt den Eintrag oben, wartende ⌘Z verfallen", async ({ page }) => {
+  await oeffne(page, "30_ablage/Einzelnes.md");
+  for (const n of ["Einzelnes", "Zweites"]) {
+    await karte(page, `30_ablage/${n}.md`).click();
+    await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", `30_ablage/${n}.md`);
+    await page.locator("#liste-koerper").focus();
+    await page.keyboard.press("Meta+Backspace");
+    await expect.poll(() => da(`30_ablage/${n}.md`)).toBe(false);
+  }
+  let aufrufe = 0;
+  await page.route((u) => u.pathname === "/api/aktivitaet/rueckgaengig", (route) => {
+    aufrufe++;
+    if (!route.request().postDataJSON()?.teilweise) return route.fulfill({ status: 409, json: { fehler: "Geändert", art: "geaendert", dateien: ["x"] } });
+    return route.continue();
+  });
+  await ohneFokus(page);
+  await page.keyboard.press("Meta+z");
+  await page.keyboard.press("Meta+z"); // zu schnell: gehört nicht mehr zum Stapel, sobald die Rückfrage da ist
+  await expect(page.locator("#dialog-host .schleier")).toBeVisible();
+  await page.locator('#dialog-host [data-aktion="trotzdem"]').waitFor();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#dialog-host .schleier")).toHaveCount(0);
+  expect(aufrufe).toBe(1);
+  expect(da("30_ablage/Zweites.md")).toBe(false);
+  await page.keyboard.press("Meta+z"); // derselbe Vorgang noch einmal: Rückfrage, diesmal „Trotzdem“
+  await page.locator('#dialog-host [data-aktion="trotzdem"]').click();
+  await expect.poll(() => da("30_ablage/Zweites.md")).toBe(true);
+  expect(da("30_ablage/Einzelnes.md")).toBe(false);
+});
+
+test("⌘Z wirkt nicht hinter offenen Menüs und Einstellungen", async ({ page }) => {
+  await oeffne(page, "30_ablage/Einzelnes.md");
+  await karte(page, "30_ablage/Zweites.md").click();
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "30_ablage/Zweites.md");
+  await page.locator("#liste-koerper").focus();
+  await page.keyboard.press("Meta+Backspace");
+  await expect.poll(() => da("30_ablage/Zweites.md")).toBe(false);
+  // Kontextmenü offen
+  await karte(page, "30_ablage/Einzelnes.md").click({ button: "right" });
+  await page.waitForSelector(".menue.offen");
+  await page.keyboard.press("Meta+z");
+  await page.waitForTimeout(500);
+  expect(da("30_ablage/Zweites.md")).toBe(false);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".menue.offen")).toHaveCount(0);
+  // Einstellungen offen
+  await ohneFokus(page);
+  await page.keyboard.press("Meta+,");
+  await expect(page.locator("#einstellungen-host")).toBeVisible();
+  await ohneFokus(page);
+  await page.keyboard.press("Meta+z");
+  await page.waitForTimeout(500);
+  expect(da("30_ablage/Zweites.md")).toBe(false);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#einstellungen-host")).toBeHidden();
   await ohneFokus(page);
   await page.keyboard.press("Meta+z");
   await expect.poll(() => da("30_ablage/Zweites.md")).toBe(true);

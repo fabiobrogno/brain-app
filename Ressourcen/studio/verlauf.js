@@ -181,7 +181,7 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
 
   function technischSchalter() {
     const b = h("button", { klasse: "vl-tech", type: "button", "data-aktion": "technisch", "aria-pressed": String(z.technisch), text: TV.technisch.knopf });
-    b.addEventListener("click", () => { z.technisch = !z.technisch; speichereLokal(TECHNISCH_SCHLUESSEL, z.technisch); zeichne({ fokusNach: null }); wurzel.querySelector(".vl-tech")?.focus(); });
+    b.addEventListener("click", () => { z.technisch = !z.technisch; speichereLokal(TECHNISCH_SCHLUESSEL, z.technisch); window.dispatchEvent(new Event("kortex-verlauf-technisch")); zeichne({ fokusNach: null }); wurzel.querySelector(".vl-tech")?.focus(); });
     return h("div", { klasse: "vl-tech-zeile" }, b, h("span", { klasse: "vl-tech-hinweis", text: TV.technisch.hinweis }));
   }
 
@@ -557,8 +557,14 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
   const ungesichert = !sha;
   const o = ordnerVon(pfad || "");
   const kannWieder = !ungesichert && status !== "D";
-  const technisch = leseTechnisch();
+  let technisch = leseTechnisch();
   const stat = h("span", { klasse: "vd-stat" });
+  const hashEl = h("span", { klasse: "vd-hash", text: kurz || "", hidden: !technisch });
+  let statKnoten = [];
+  const zeigeStat = () => setze(stat, technisch ? statKnoten : []);
+  // der Schalter „Technische Details“ gilt sofort, auch bei offener Änderungsansicht
+  const beiSchalter = () => { technisch = leseTechnisch(); hashEl.hidden = !technisch; zeigeStat(); };
+  window.addEventListener("kortex-verlauf-technisch", beiSchalter);
 
   const zurueck = h("button", { klasse: "vd-zurueck", type: "button", "data-aktion": "diff-zu" }, zeichen("pfeil-links", 14), h("span", { text: TV.diff.zurueck }));
   const wieder = kannWieder
@@ -580,7 +586,7 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
         ungesichert
           ? h("span", { klasse: "vd-ungesichert", text: TV.ungesichert })
           : [
-            technisch ? h("span", { klasse: "vd-hash", text: kurz || "" }) : null,
+            hashEl,
             nachricht ? h("span", { klasse: "vd-nachricht", text: nachricht }) : null,
             zeit ? h("span", { klasse: "vd-zeit", title: volleZeit(zeit), text: relativeZeit(zeit) }) : null,
           ],
@@ -620,9 +626,10 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
     if (d.binaer && !d.zeilen.some((x) => x.art !== "k")) { koerper.replaceChildren(h("p", { klasse: "vd-hinweis", text: TV.diff.keinText })); return; }
     const gesamt = d.zeilen.length;
     const gezeigt = d.zeilen.slice(0, MAX_DIFF_ZEILEN);
-    if (technisch) setze(stat,
+    statKnoten = [
       d.plus ? h("span", { klasse: "vl-plus", title: TV.diff.plusZeilen(d.plus), text: "+" + d.plus }) : null,
-      d.minus ? h("span", { klasse: "vl-weg", title: TV.diff.minusZeilen(d.minus), text: "−" + d.minus }) : null);
+      d.minus ? h("span", { klasse: "vl-weg", title: TV.diff.minusZeilen(d.minus), text: "−" + d.minus }) : null];
+    zeigeStat();
     geparst = { gesamt }; gezeigtZeilen = gezeigt;
     umschalter.hidden = false;
     zeichneKoerper();
@@ -637,6 +644,7 @@ export function zeigeDiff(host, { api, sha, kurz, nachricht, pfad, status, zeit,
   const instanz = {
     zerstoere() {
       tot = true;
+      window.removeEventListener("kortex-verlauf-technisch", beiSchalter);
       document.removeEventListener("keydown", taste);
       if (DIFFS.get(host) === instanz) DIFFS.delete(host);
       if (wurzel.parentNode === host) host.replaceChildren();
