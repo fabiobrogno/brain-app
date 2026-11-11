@@ -22,6 +22,7 @@ export function erzeugeDateiaktionen(ctx) {
   let laeuft = false;       // eine Aktion zugleich
   let ziehend = null;       // { art, pfad } während des Ziehens
   let edit = null;          // laufende Umbenennung an Ort und Stelle: { art, pfad, text }
+  const selbstAngewandt = new Set(); // Protokoll-Ids der Vorgänge dieses Studios (schon angewandt): ihr Live-Ereignis ändert den Ort der offenen Notiz nicht noch einmal
 
   // ───────────── Pfade und Zustand ─────────────
   const istFest = (pfad) => !pfad.includes("/") && FESTE_ORDNER(S).has(pfad.toLowerCase());
@@ -180,7 +181,7 @@ export function erzeugeDateiaktionen(ctx) {
   async function nachErfolg(spec, erg) {
     const text = spec.art === "umbenennen" ? TD.toast.umbenannt : spec.art === "verschieben" ? TD.toast.verschoben : TD.toast.papierkorb;
     if (spec.art === "loeschen") ctx.schreiben?.().entfernt(spec.pfad, spec.typ === "ordner");
-    else { pfadGeaendert(spec.typ, erg.von, erg.nach); await folgeTagOrdner(spec.typ, erg.von, erg.nach); }
+    else { if (erg.aktivitaetId) selbstAngewandt.add(erg.aktivitaetId); pfadGeaendert(spec.typ, erg.von, erg.nach); await folgeTagOrdner(spec.typ, erg.von, erg.nach); }
     await ctx.ladeBaum();
     ladeKorbZahl();
     if (S.pfad && spec.art !== "loeschen") {
@@ -211,6 +212,7 @@ export function erzeugeDateiaktionen(ctx) {
       toast(fehlerText(e), { fehler: true });
       return false;
     }
+    if (r.protokollId) selbstAngewandt.add(r.protokollId); // das Live-Ereignis dieses Vorgangs schiebt nichts noch einmal
     if (wieder) stapel.markiereWieder(id); else stapel.markiereZurueck(id, S.info?.vault, r.vorgangArt);
     pfadGeaendert(r.typ === "ordner" ? "ordner" : r.typ === "datei" ? "datei" : null, r.von, r.nach);
     await folgeTagOrdner(r.typ, r.von, r.nach);
@@ -304,8 +306,17 @@ export function erzeugeDateiaktionen(ctx) {
       else if (e.key === "Escape") { e.preventDefault(); beendeInline(true); }
     });
     for (const ev of ["click", "dblclick", "mousedown", "pointerdown", "dragstart"]) input.addEventListener(ev, (e) => e.stopPropagation());
-    input.addEventListener("blur", () => { if (edit && input.isConnected) uebernehmen(input, hinweis, pruefen, true); });
-    requestAnimationFrame(() => { if (input.isConnected) { input.focus({ preventScroll: true }); input.select(); } });
+    // Zeichnet die Oberfläche neu (Live-Ereignis, Fensterfokus), meldet Chromium „blur“, solange das Feld noch im Dokument hängt. Sofort entschieden, endete
+    // das Umbenennen dabei, ein gültiger halb getippter Name wurde sogar übernommen. Darum erst nach dem laufenden Schritt entscheiden: Ist das Feld dann
+    // nicht mehr im Dokument, war es das Neuzeichnen, und nachZeichnen() bringt es zurück.
+    input.addEventListener("blur", () => { queueMicrotask(() => { if (edit && input.isConnected && document.activeElement !== input) uebernehmen(input, hinweis, pruefen, true); }); });
+    const erneut = edit.gebaut;
+    edit.gebaut = true;
+    requestAnimationFrame(() => {
+      if (!input.isConnected) return;
+      input.focus({ preventScroll: true });
+      if (erneut) { input.setSelectionRange(input.value.length, input.value.length); pruefen(); } else input.select(); // nach dem Neuzeichnen weiter am Ende tippen, nicht alles ersetzen
+    });
   }
   function uebernehmen(input, hinweis, pruefen, ausBlur = false) {
     if (!edit) return;
@@ -600,9 +611,12 @@ export function erzeugeDateiaktionen(ctx) {
   document.addEventListener("keydown", (e) => { if (taste(e)) { e.preventDefault(); e.stopPropagation(); } }, true);
 
   // Live-Ereignis „aktivitaet“ der Art datei-aktion/rueckgaengig mit zwei Pfaden [jetzt, vorher]: liegt die offene Notiz (oder ihr Ordner) dort, folgt sie.
+  // Ausgenommen sind Vorgänge dieses Studios: deren Ortswechsel ist schon angewandt. Kam das Ereignis (die Werkstatt bündelt Ereignisse) erst nach einem
+  // „Rückgängig“ an, schob es die offene Notiz sonst an den alten Ort zurück, obwohl die Datei wieder am ursprünglichen liegt (Wackler umbenennen.spec).
   function folgeVerschiebung(liste) {
     for (const e of liste || []) {
       if (e.typ !== "aktivitaet" || !["datei-aktion", "rueckgaengig"].includes(e.art) || !Array.isArray(e.pfade) || e.pfade.length !== 2) continue;
+      if (e.id && selbstAngewandt.has(e.id)) continue;
       const [jetzt, vorher] = e.pfade;
       pfadGeaendert(null, vorher, jetzt); // auch ohne offene Notiz: Zurück/Vor und Entwürfe folgen
       if (!S.pfad) continue;

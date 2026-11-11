@@ -92,6 +92,29 @@ test("Vervollständigung: # im Text bietet Tags an, Enter übernimmt; in Übersc
   await expect(liste).toHaveCount(0);
 });
 
+test("⌘Z außerhalb des Editors nimmt „Tag umbenennen“ zurück, ⇧⌘Z stellt es wieder her (R4-4)", async ({ page }) => {
+  await oeffne(page);
+  const vorher = lies("20_projekte/Atlas.md");
+  await rechtsklick(page, tagZeile(page, "projekt"));
+  await menueEintrag(page, "tag-umbenennen").click();
+  const dlg = page.locator('[data-dialog="tag-umbenennen"]');
+  await dlg.locator("input").fill("vorhaben");
+  await dlg.locator('[data-aktion="tag-vorschau"]').click();
+  await expect(dlg.locator('[data-aktion="tag-umbenennen"]')).toBeEnabled();
+  await dlg.locator('[data-aktion="tag-umbenennen"]').click();
+  await expect(toastMit(page, "#projekt heißt jetzt #vorhaben")).toBeVisible();
+  await expect(toastMit(page, "#projekt heißt jetzt").locator(".toast-kz")).toHaveText("⌘Z");
+  expect(lies("20_projekte/Atlas.md")).toContain("vorhaben/atlas");
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press("Meta+z");
+  await expect(toastMit(page, "Umbenennen rückgängig gemacht")).toBeVisible();
+  expect(lies("20_projekte/Atlas.md")).toBe(vorher);
+  await expect(tagZeile(page, "projekt")).toBeVisible();
+  await page.keyboard.press("Meta+Shift+z");
+  await expect(toastMit(page, "Wieder ausgeführt")).toBeVisible();
+  expect(lies("20_projekte/Atlas.md")).toContain("vorhaben/atlas");
+});
+
 test("Umbenennen: Vorschau nennt Notizen und Stellen, ein Hinweis mit Rückgängig, Rückgängig stellt jedes Byte her", async ({ page }) => {
   await oeffne(page);
   const vorher = { atlas: lies("20_projekte/Atlas.md"), plan: lies("20_projekte/Plan.md"), ideen: lies("20_projekte/Ideen.md") };

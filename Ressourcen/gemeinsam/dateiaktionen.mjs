@@ -892,8 +892,9 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       try { erg = wechsle(m, "zurueck", { teilweise: eingabe.teilweise === true }); } catch (e) { loescheMarke(); throw e; } // ein Fehler (409 …) heißt: nichts angefasst; nur ein Absturz lässt die Marke stehen
       m.status = "zurueck"; schreibeManifest(m);
       loescheMarke();
-      eintragLog(m, m.art === "loeschen" ? "Rückgängig: Aus dem Papierkorb zurückgelegt." : (m.art === "tag-umbenennen" ? `Rückgängig: Tag #${m.tagNeu} heißt wieder #${m.tagAlt}.` : `Rückgängig: ${m.art === "umbenennen" ? "Umbenennen" : m.art === "verlinken" ? "Verlinken" : m.art === "aendern" ? "Änderung" : "Verschieben"} zurückgenommen.`), [erg.nach || erg.pfad, erg.von].filter(Boolean)); // [jetziger Ort, voriger Ort]: offene Studios folgen
-      return { ...erg, ok: true, art: m.art === "loeschen" ? "wiederhergestellt" : "zurueck", vorgangArt: m.art };
+      const log = eintragLog(m, m.art === "loeschen" ? "Rückgängig: Aus dem Papierkorb zurückgelegt." : (m.art === "tag-umbenennen" ? `Rückgängig: Tag #${m.tagNeu} heißt wieder #${m.tagAlt}.` : `Rückgängig: ${m.art === "umbenennen" ? "Umbenennen" : m.art === "verlinken" ? "Verlinken" : m.art === "aendern" ? "Änderung" : "Verschieben"} zurückgenommen.`), [erg.nach || erg.pfad, erg.von].filter(Boolean)); // [jetziger Ort, voriger Ort]: offene Studios folgen
+      // protokollId: der Eintrag, den offene Studios gleich als Live-Ereignis sehen; das auslösende Studio hat den Ortswechsel schon selbst angewandt
+      return { ...erg, ok: true, art: m.art === "loeschen" ? "wiederhergestellt" : "zurueck", vorgangArt: m.art, protokollId: log?.id ?? null };
     });
   }
   function vorgangWieder(id, eingabe = {}) {
@@ -907,8 +908,8 @@ export function erzeugeDateiaktionen({ wurzel, support, name = "", istGeneriert 
       m.status = "fertig"; if (m.art === "loeschen") m.zeit = jetzt().toISOString(); // „gelöscht vor N Tagen“ beginnt neu
       schreibeManifest(m);
       loescheMarke();
-      eintragLog(m, m.art === "tag-umbenennen" ? `Wiederhergestellt: Tag #${m.tagAlt} heißt jetzt #${m.tagNeu}.` : "Wiederhergestellt: Die Aktion gilt wieder.", [erg.nach || erg.pfad, erg.von].filter(Boolean));
-      return { ...erg, ok: true, art: "wieder", vorgangArt: m.art };
+      const log = eintragLog(m, m.art === "tag-umbenennen" ? `Wiederhergestellt: Tag #${m.tagAlt} heißt jetzt #${m.tagNeu}.` : "Wiederhergestellt: Die Aktion gilt wieder.", [erg.nach || erg.pfad, erg.von].filter(Boolean));
+      return { ...erg, ok: true, art: "wieder", vorgangArt: m.art, protokollId: log?.id ?? null };
     });
   }
   const vorgangMoeglich = (id) => { const m = vorgangStand(id); return m ? { moeglich: m.status === "fertig", zurueckgenommen: m.status === "zurueck", art: m.art } : null; };

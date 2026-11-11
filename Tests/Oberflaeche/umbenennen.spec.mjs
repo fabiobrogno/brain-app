@@ -24,6 +24,9 @@ test.afterEach(() => server?.stopp());
 async function oeffne(page, pfad = null) {
   await page.goto(server.url + (pfad ? "?pfad=" + encodeURIComponent(pfad) : ""));
   await page.waitForSelector("[data-karte]");
+  // Die Notiz aus ?pfad= öffnet das Studio erst nach den Karten; dabei klappt es ihre Ordner im Baum auf (im selben Schritt wie der Pfad oben).
+  // Ohne dieses Warten sah klappeAuf() den Ordner noch zu, und sein Klick traf die schon aufgeklappte Zeile und klappte sie wieder zu (CI-Wackler).
+  if (pfad) await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", pfad);
 }
 const karte = (page, pfad) => page.locator(`[data-karte][data-pfad="${pfad}"]`);
 const zeile = (page, pfad) => page.locator(`#baum .zeile[data-pfad="${pfad}"]`);
@@ -136,6 +139,28 @@ test("Ordner umbenennen: ungültiger Name zeigt einen Hinweis und wird nicht üb
   await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "20_projekte/Backwaren/Kuchen.md");
 });
 
+// Rennen (Wackler im Test oben unter Last): Zeichnete der Baum während des Tippens neu (Live-Ereignis, Fensterfokus), meldete Chromium „blur“ am noch
+// eingehängten Feld. Das Umbenennen endete, ein gültiger halber Name wurde sogar übernommen. Erzwungen: neue Datei plus Fensterfokus, während das Feld offen ist.
+test("Ordner umbenennen: Neuzeichnen des Baums beim Tippen beendet das Umbenennen nicht und übernimmt keinen halben Namen", async ({ page }) => {
+  await oeffne(page, "20_projekte/Rezepte/Kuchen.md");
+  await rechtsklick(page, zeile(page, "20_projekte/Rezepte"));
+  await menueEintrag(page, "umbenennen").click();
+  const feld = zeile(page, "20_projekte/Rezepte").locator(".inline-name");
+  await expect(feld).toBeFocused();
+  await feld.fill("Halb");
+  schreib("20_projekte/Neu.md", "# Neu\n");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(zeile(page, "20_projekte")).toHaveText(/20_projekte\s*4/); // der Baum hat neu gezeichnet (Zähler mit der neuen Notiz)
+  await expect(feld).toBeFocused();
+  await expect(feld).toHaveValue("Halb");
+  expect(existsSync(join(vault, "20_projekte/Halb"))).toBe(false);
+  await page.keyboard.type("e Torte"); // weiter am Ende, nicht alles ersetzt
+  await expect(feld).toHaveValue("Halbe Torte");
+  await page.keyboard.press("Escape");
+  await expect(feld).toHaveCount(0);
+  expect(existsSync(join(vault, "20_projekte/Rezepte/Kuchen.md"))).toBe(true);
+});
+
 test("Verschieben über den Ordner-Wähler: Suchen, Pfeiltasten, Enter; Verweise folgen; Rückgängig bringt die Notiz zurück", async ({ page }) => {
   await oeffne(page, "20_projekte/Zutaten.md");
   await rechtsklick(page, karte(page, "20_projekte/Zutaten.md"));
@@ -156,6 +181,41 @@ test("Verschieben über den Ordner-Wähler: Suchen, Pfeiltasten, Enter; Verweise
   await expect(toastMit(page, "Verschieben rückgängig gemacht")).toBeVisible();
   expect(existsSync(join(vault, "20_projekte/Zutaten.md"))).toBe(true);
   await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "20_projekte/Zutaten.md");
+});
+
+// Rennen (Wackler im Test oben unter Last): Die Werkstatt bündelt Live-Ereignisse; das Ereignis des eigenen Verschiebens kam erst nach dem „Rückgängig“ an
+// (oder noch einmal) und schob die offene Notiz an den alten Ort zurück. Erzwungen: das echte Ereignis des Verschiebens wird nach dem Rückgängig erneut zugestellt.
+test("Verschieben, Rückgängig, dann kommt das Live-Ereignis des eigenen Verschiebens (noch einmal) an: die offene Notiz bleibt, wo die Datei liegt", async ({ page }) => {
+  let gemerkt = null, nachspielen = false, wiedergegeben = false;
+  await page.route((u) => u.pathname === "/api/ereignisse", async (route) => {
+    try {
+      const r = await route.fetch();
+      let j = await r.json();
+      gemerkt ??= (j.ereignisse || []).find((e) => e.typ === "aktivitaet" && e.art === "datei-aktion" && e.pfade?.length === 2) || null;
+      if (nachspielen && gemerkt && j.ereignisse?.length) { nachspielen = false; wiedergegeben = true; j = { ...j, ereignisse: [gemerkt, ...j.ereignisse] }; }
+      await route.fulfill({ response: r, json: j });
+    } catch { await route.abort().catch(() => {}); } // der Long-Poll läuft beim Testende noch
+  });
+  await oeffne(page, "20_projekte/Zutaten.md");
+  await rechtsklick(page, karte(page, "20_projekte/Zutaten.md"));
+  await menueEintrag(page, "verschieben").click();
+  await expect(page.locator('[data-dialog="ordner-waehler"]')).toBeVisible();
+  await page.keyboard.type("abla");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "30_ablage/Zutaten.md");
+  await expect.poll(() => gemerkt?.pfade, { timeout: 10000 }).toEqual(["30_ablage/Zutaten.md", "20_projekte/Zutaten.md"]);
+  await toastMit(page, "Verschoben").locator("a").click();
+  await expect(toastMit(page, "Verschieben rückgängig gemacht")).toBeVisible();
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "20_projekte/Zutaten.md");
+  // Jeder Stand der Kopfzeile ab jetzt: auch ein kurzes Springen an den alten Ort zählt (was man dann tippt, ginge an den falschen Pfad)
+  await page.evaluate(() => { window.__pfade = []; const p = document.querySelector("#pfad"); new MutationObserver(() => window.__pfade.push(p.getAttribute("data-tipp-text") || p.title)).observe(p, { attributes: true, childList: true }); });
+  nachspielen = true;
+  schreib("30_ablage/Anstoss.md", "# Anstoß\n"); // ein frisches Ereignis, damit die nächste Antwort gleich kommt
+  await expect.poll(() => wiedergegeben, { timeout: 10000 }).toBe(true);
+  await expect(zeile(page, "30_ablage")).toHaveText(/30_ablage\s*2/); // dieselbe Antwort ist verarbeitet (der Baum kennt die neue Datei)
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "20_projekte/Zutaten.md");
+  expect(await page.evaluate(() => window.__pfade.filter((p) => p && p !== "20_projekte/Zutaten.md"))).toEqual([]);
+  expect(existsSync(join(vault, "20_projekte/Zutaten.md"))).toBe(true);
 });
 
 test("Ziehen und Ablegen: Notizkarte auf einen Ordner; ein Ordner auf einen Ordner; nicht in sich selbst", async ({ page }) => {

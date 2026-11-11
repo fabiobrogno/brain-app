@@ -24,6 +24,11 @@ function fensterPaar(v, n) {
 }
 const warte = (ms) => new Promise((ok) => setTimeout(ok, ms));
 const NOTIZEN_ZUERST = 6, STELLEN_ZUERST = 3, AUTOMATISCH = 6;
+// Solange die Werkstatt Suchindex oder Namenssatz noch aufbaut (großer Vault direkt nach dem Start), fragt die Spalte weiter: anfangs rasch, dann bis 1 s Abstand,
+// höchstens AUFBAU_MS lang. Diese Runden zählen nicht zu den AUTOMATISCH Runden für noch ungeprüfte Kandidaten (`offen`).
+const AUFBAU_MS = 60_000;
+const aufbauPause = (i) => Math.min(1000, 150 + i * 150);
+const baut = (r) => !r.vollstaendig && !r.mehrdeutig && (r.aufbau?.index === false || r.aufbau?.namen === false);
 
 export function erzeugeErwaehnungen(ctx) {
   const { S, ed } = ctx;
@@ -91,7 +96,7 @@ export function erzeugeErwaehnungen(ctx) {
       const r = await api.verlinke({ ziel: zielPfad, stellen });
       const n = (r.dateien || []).reduce((a, d) => a + d.anzahl, 0);
       if (!n) { toast(TE.toast.nichtsVerlinkt); await nachAenderung(); return; }
-      if (r.aktivitaetId) stapel.merke({ id: r.aktivitaetId, art: "verlinken", vault: S.info?.vault });
+      if (r.aktivitaetId) stapel.merke({ id: r.aktivitaetId, art: "verlinken", vault: S.info?.vault, rueck: () => zurueck(r.aktivitaetId) });
       toast(TE.toast.verlinkt(n, zielTitel), { ms: 9000, kuerzel: TD.stapel.kzZurueck, aktion: r.aktivitaetId ? { text: TE.toast.rueckgaengig, tun: () => zurueck(r.aktivitaetId) } : undefined });
       if (r.uebersprungen?.length) toast(TE.toast.uebersprungen(r.uebersprungen.length), { ms: 5000 });
       await nachAenderung(r.geaendert || []);
@@ -110,7 +115,7 @@ export function erzeugeErwaehnungen(ctx) {
         try { r = await api.verlinke({ ziel: zielPfad, alle: true, token: v.token }); }
         catch (e) { if (e.status === 409 && e.daten?.art === "vorschau-veraltet" && versuch === 0) { toast(TE.vorschau.veraltet); continue; } throw e; }
         const n = (r.dateien || []).reduce((a, d) => a + d.anzahl, 0);
-        if (r.aktivitaetId) stapel.merke({ id: r.aktivitaetId, art: "verlinken", vault: S.info?.vault });
+        if (r.aktivitaetId) stapel.merke({ id: r.aktivitaetId, art: "verlinken", vault: S.info?.vault, rueck: () => zurueck(r.aktivitaetId) });
         toast(TE.toast.verlinkt(n, zielTitel), { ms: 9000, kuerzel: TD.stapel.kzZurueck, aktion: r.aktivitaetId ? { text: TE.toast.rueckgaengig, tun: () => zurueck(r.aktivitaetId) } : undefined });
         await nachAenderung(r.geaendert || []);
         return;
@@ -143,7 +148,11 @@ export function erzeugeErwaehnungen(ctx) {
 
   function zeichneEin(host, r, { pfad, aktuell, pruefeWeiter }) {
     if (!aktuell()) return;
-    if (!r.namen.length && !r.mehrdeutig) { host.hidden = true; ki.keineListe(pfad); return; }
+    if (!r.namen.length && !r.mehrdeutig) {
+      // die Werkstatt kennt die Notiz noch nicht: „Wird geladen …“ bleibt stehen, die nächste Runde zeichnet (nach AUFBAU_MS: Hinweis mit „Weiter prüfen“)
+      if (baut(r)) { if (r.automatischVorbei) fuelle(host, TE.ein.titel, h("p", { klasse: "leise erw-weiter", "data-erw-weiter": "" }, TE.ein.weiter, baueKnopf({ text: TE.ein.mehrPruefen, groesse: "s", aufKlick: pruefeWeiter }))); return; }
+      host.hidden = true; ki.keineListe(pfad); return;
+    }
     host.hidden = false;
     const kinder = [];
     if (r.mehrdeutig) { ki.keineListe(pfad); fuelle(host, TE.ein.titel, h("p", { klasse: "leise erw-leer", text: TE.ein.mehrdeutig })); return; }
@@ -173,24 +182,29 @@ export function erzeugeErwaehnungen(ctx) {
     if (r.notizen.length) { ki.melde({ pfad, zahl: r.anzahlStellen, host }); ki.anwenden(host); }
   }
 
-  // Der erste Abruf wird abgewartet (die Spalte zeigt sofort etwas), weitere laufen im Hintergrund, solange die Werkstatt noch Kandidaten prüft
+  // Der erste Abruf wird abgewartet (die Spalte zeigt sofort etwas), weitere laufen im Hintergrund, solange die Werkstatt noch aufbaut oder Kandidaten prüft
   async function ladeEin(host, o) {
     const { pfad, aktuell } = o;
-    const einmal = async (i) => {
+    const zeichne = (r, vorbei) => zeichneEin(host, { ...r, automatischVorbei: vorbei }, { pfad, aktuell, pruefeWeiter: () => ladeEin(host, o) });
+    const einmal = async (runde) => {
       let r;
-      try { r = await api.erwaehnungen(pfad); } catch { if (aktuell()) fuelle(host, TE.ein.titel, h("p", { klasse: "leise erw-leer", text: TE.ein.fehler })); return false; }
-      if (!aktuell()) return false;
-      const weiter = r.offen > 0 || (!r.vollstaendig && !r.mehrdeutig && r.namen.length > 0);
-      zeichneEin(host, { ...r, automatischVorbei: weiter && i === AUTOMATISCH - 1 }, { pfad, aktuell, pruefeWeiter: () => ladeEin(host, o) });
-      return weiter;
+      try { r = await api.erwaehnungen(pfad); } catch { if (aktuell()) fuelle(host, TE.ein.titel, h("p", { klasse: "leise erw-leer", text: TE.ein.fehler })); return null; }
+      if (!aktuell()) return null;
+      const weiter = r.offen > 0 || (!r.vollstaendig && !r.mehrdeutig && r.namen.length > 0) || baut(r);
+      zeichne(r, weiter && !baut(r) && runde === AUTOMATISCH - 1);
+      return weiter ? r : null;
     };
-    let weiter = await einmal(0);
+    let r = await einmal(0);
     (async () => {
-      for (let i = 1; weiter && i < AUTOMATISCH; i++) {
-        await warte(i < 3 ? 80 : 160);
+      const ende = performance.now() + AUFBAU_MS;
+      for (let runde = 1, i = 0; r; i++) {
+        if (baut(r)) { if (performance.now() > ende) break; await warte(aufbauPause(i)); }
+        else { if (runde >= AUTOMATISCH) break; await warte(runde < 3 ? 80 : 160); }
         if (!aktuell()) return;
-        weiter = await einmal(i);
+        const jetzt = baut(r) ? runde : runde++;
+        r = await einmal(jetzt);
       }
+      if (r && aktuell()) zeichne(r, true); // noch nicht fertig (Aufbau länger als AUFBAU_MS oder Runden für `offen` vorbei): „Weiter prüfen“ anbieten statt stehen zu bleiben
     })();
   }
 
@@ -268,9 +282,10 @@ export function erzeugeErwaehnungen(ctx) {
     let r;
     try { r = await api.erwaehntVon(pfad, docText()); } catch { if (aktuell()) fuelle(host, TE.aus.titel, h("p", { klasse: "leise erw-leer", text: TE.aus.fehler })); return; }
     zeichneAus(host, r, { pfad, aktuell });
-    // Der Namenssatz baut sich im Hintergrund auf: bis er vollständig ist, gleich noch einmal nachsehen
-    for (let i = 0; i < 4 && !r.vollstaendig && aktuell(); i++) {
-      await warte(250 * (i + 1));
+    // Der Namenssatz baut sich im Hintergrund auf: bis er vollständig ist, weiter nachsehen (bis 1 s Abstand, höchstens AUFBAU_MS lang)
+    const ende = performance.now() + AUFBAU_MS;
+    for (let i = 0; !r.vollstaendig && aktuell() && performance.now() < ende; i++) {
+      await warte(Math.min(1000, 250 * (i + 1)));
       if (!aktuell()) return;
       try { r = await api.erwaehntVon(pfad, docText()); } catch { return; }
       zeichneAus(host, r, { pfad, aktuell });

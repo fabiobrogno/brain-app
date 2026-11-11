@@ -24,6 +24,7 @@ export const TV = {
     jahre: (n) => (n === 1 ? "vor 1 Jahr" : `vor ${n} Jahren`),
   },
   status: { A: "Neu", M: "Geändert", D: "Gelöscht", R: "Umbenannt" },
+  statusSymbol: { A: "plus", M: "stift", D: "papierkorb", R: "pfeil" },
   statusBuchstabe: { A: "A", M: "M", D: "D", R: "R" },
   zaehlerPlus: (n) => `${mehrzahl(n, "neue Datei", "neue Dateien")}`,
   zaehlerAender: (n) => `${mehrzahl(n, "geänderte Datei", "geänderte Dateien")}`,

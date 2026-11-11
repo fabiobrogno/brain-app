@@ -863,6 +863,13 @@ test("Menschensprache: der Verlauf spricht von Fassungen, ohne Kürzel, Zähler 
   await expect(page.locator(".vl-commitzeile:not(.ungesichert)").first().locator(".vl-dateizahl")).toHaveText("3 Dateien");
   await page.locator(".vl-commitzeile:not(.ungesichert)").first().click();
   await expect(page.locator(".vl-datei").first()).toBeVisible();
+  // Datei-Marken: Symbol mit Hinweis statt Buchstabe; alle Tageszeilen einzeilig und gleich hoch (auch „Heute“ mit dem Zähler)
+  await expect(page.locator(".vl-datei .vl-marke.sym svg").first()).toBeVisible();
+  await expect(page.locator(".vl-datei .vl-marke").first()).toHaveText("");
+  await expect(page.locator(".vl-datei .vl-marke").nth(1)).toHaveAttribute("aria-label", "Neu");
+  const hoehen = await page.locator(".vl-tagkopf").evaluateAll((l) => l.map((e) => Math.round(e.getBoundingClientRect().height)));
+  expect(new Set(hoehen).size, "alle Datumszeilen gleich hoch: " + hoehen).toBe(1);
+  expect(hoehen[0]).toBeLessThanOrEqual(34);
   const text = await page.locator("#t-host").innerText();
   expect(text).not.toMatch(GIT_WORT);
   expect(text).toContain("Fassungen");
@@ -882,6 +889,7 @@ test("Menschensprache: der Verlauf spricht von Fassungen, ohne Kürzel, Zähler 
   await expect(koepfe.nth(0)).toContainText("(2 Commits)");
   await expect(page.locator(".vl-commitzeile:not(.ungesichert)").first().locator(".vl-hash")).toHaveText(sha(1).slice(0, 7));
   await expect(page.locator(".vl-commitzeile:not(.ungesichert)").first().locator(".vl-plus")).toHaveText("+1");
+  await expect(page.locator(".vl-datei .vl-marke").first()).toHaveText("M"); // mit „Technische Details“ die Buchstaben
   if (FOTO44) { await page.waitForTimeout(300); await page.screenshot({ path: join(FOTO44, "r44-verlauf-technisch.png") }); }
   // die Wahl bleibt: neu gezeichnet steht der Schalter weiter an
   expect(await page.evaluate(() => localStorage.getItem("brain-studio.verlauf-technisch"))).toBe("true");

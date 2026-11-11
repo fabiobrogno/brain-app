@@ -249,13 +249,20 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
     return h("div", { klasse: "vl-commit" }, zeile, dateien);
   }
 
+  // Ohne „Technische Details“ ein kleines Symbol (neu: Plus, geändert: Stift, gelöscht: Papierkorb, umbenannt: Pfeil) mit Hinweis; mit ihnen der Buchstabe der Versionsverwaltung
+  function statusMarke(st) {
+    const klasse = "vl-marke vs-" + st.toLowerCase();
+    if (z.technisch) return h("span", { klasse, "aria-label": TV.status[st], title: TV.status[st], text: TV.statusBuchstabe[st] });
+    return h("span", { klasse: klasse + " sym", role: "img", "aria-label": TV.status[st], title: TV.status[st] }, zeichen(TV.statusSymbol[st] || "stift", 11));
+  }
+
   function fuelleDateien(gruppe, c) {
     gruppe.dataset.gebaut = "1";
     if (!c.dateien.length) { gruppe.replaceChildren(h("p", { klasse: "vl-keine", text: TV.keineDateien })); return; }
     gruppe.replaceChildren(...c.dateien.map((d) => {
       const key = "d:" + (c.sha || UNGESICHERT) + ":" + d.pfad;
       const zeile = h("div", { klasse: "vl-zeile vl-datei" + (d.status === "D" ? " weg" : ""), role: "treeitem", "aria-level": c.sha ? "3" : "2", "aria-selected": String(gewaehlt === key), tabindex: "-1", "data-art": "datei", "data-schluessel": key, "data-pfad": d.pfad, "data-status": d.status, title: d.pfad + " · " + (TV.status[d.status] || "") },
-        h("span", { klasse: "vl-marke vs-" + d.status.toLowerCase(), "aria-label": TV.status[d.status], text: TV.statusBuchstabe[d.status] }),
+        statusMarke(d.status),
         h("span", { klasse: "vl-dname" }, dateiNamen(d.pfad, { name: "vl-dtitel", ordner: "vl-dordner" })));
       zeile._d = { commit: c, datei: d };
       return zeile;

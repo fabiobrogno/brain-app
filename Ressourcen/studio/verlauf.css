@@ -8,12 +8,12 @@
 .vl-zeile svg { flex: none; }
 
 /* Tageskopf (haftet beim Scrollen) */
-.vl-tagkopf { position: sticky; top: 0; z-index: 3; min-height: 30px; padding: 4px 12px 4px 8px; gap: 0 4px; flex-wrap: wrap; background: var(--seite); border-bottom: 1px solid var(--linie); color: var(--text-2); font-size: 12px; font-weight: 500; letter-spacing: 0; transition: background-color var(--t); }
+.vl-tagkopf { position: sticky; top: 0; z-index: 3; min-height: 30px; padding: 4px 12px 4px 8px; gap: 0 4px; flex-wrap: nowrap; align-items: center; overflow: hidden; background: var(--seite); border-bottom: 1px solid var(--linie); color: var(--text-2); font-size: 12px; font-weight: 500; letter-spacing: 0; transition: background-color var(--t); }
 .vl-tagkopf:hover { background-image: linear-gradient(var(--hover), var(--hover)); }
 .vl-chev { display: grid; place-items: center; width: 16px; height: 16px; color: var(--text-3); transition: transform var(--t) var(--ease); }
 .vl-tagkopf[aria-expanded="false"] .vl-chev { transform: rotate(-90deg); }
 /* Geist ist breiter (P1-Befund): in der schmalen Spalte rutschen „Heute“ und die Zahl der Commits in eine zweite Zeile, statt den Tag mit „…“ abzuschneiden */
-.vl-tagtext { min-width: 0; white-space: nowrap; }
+.vl-tagtext { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vl-tagzahl { margin-left: auto; flex: none; color: var(--text-3); font-weight: 500; white-space: nowrap; }
 
 /* Commit-Zeile */
@@ -174,7 +174,7 @@
 /* Schmale Spalte (Mindestgröße des Fensters): der Autor entfällt, damit Zeit, Kürzel und Zähler in einer Zeile bleiben (der Name steht im Tooltip und im Detail) */
 @container liste (max-width: 330px) { .vl-autor { display: none; } }
 .vl-hash::before { font-family: var(--schrift); }
-.vl-tagrel { flex: none; margin-left: 6px; height: 16px; padding: 0 6px; border-radius: var(--r-pille); background: var(--akzent-weich); color: var(--akzent); font-size: 10.5px; line-height: 16px; font-weight: 650; letter-spacing: .01em; }
+.vl-tagrel { flex: none; white-space: nowrap; margin-left: 6px; height: 16px; padding: 0 6px; border-radius: var(--r-pille); background: var(--akzent-weich); color: var(--akzent); font-size: 10.5px; line-height: 16px; font-weight: 650; letter-spacing: .01em; }
 .vl-commitzeile:focus-visible, .vl-datei:focus-visible { outline: 0; box-shadow: inset 0 0 0 2px var(--akzent); }
 
 /* Technische Details (aufklappbar, nie als Hauptsatz) */
