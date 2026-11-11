@@ -411,7 +411,7 @@ private func url(_ s: String) -> URL { URL(string: s)! }
 // MARK: Fenstermaße
 
 @Test func studioFensterMasseUndStartgroesse() {
-    #expect(StudioFenster.minimum == CGSize(width: 1100, height: 700))
+    #expect(StudioFenster.minimum == CGSize(width: 720, height: 520))
     #expect(StudioFenster.startMinimum == CGSize(width: 1280, height: 820))
     #expect(StudioFenster.startMaximum == CGSize(width: 1800, height: 1150))
     // 85 % der sichtbaren Fläche je Achse (1920×1055 → 1632×897)
@@ -426,10 +426,12 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     // kleiner als die Untergrenze: die ganze sichtbare Fläche; winzig: nie unter dem Fenster-Minimum
     #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 1280, height: 775)) == CGSize(width: 1280, height: 775))
     #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 1180, height: 760)) == CGSize(width: 1180, height: 760))
-    #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 1000, height: 600)) == CGSize(width: 1100, height: 700))
-    // gemerkte Größe aus 0.2.0 (Minimum war 900×600) wird angehoben, größere bleibt
-    #expect(StudioFenster.mindestens(CGSize(width: 900, height: 600)) == CGSize(width: 1100, height: 700))
-    #expect(StudioFenster.mindestens(CGSize(width: 1600, height: 650)) == CGSize(width: 1600, height: 700))
+    #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 1000, height: 600)) == CGSize(width: 1000, height: 600))
+    #expect(StudioFenster.startgroesse(sichtbar: CGSize(width: 640, height: 450)) == CGSize(width: 720, height: 520))
+    // Minimum 720×520 (R4-7, halbe Breite eines 13"/14"-Macs bei Split View): eine kleiner gemerkte Größe wird angehoben, größere bleibt (auch die alte 1100×700 aus 0.2.x)
+    #expect(StudioFenster.mindestens(CGSize(width: 600, height: 400)) == CGSize(width: 720, height: 520))
+    #expect(StudioFenster.mindestens(CGSize(width: 1100, height: 700)) == CGSize(width: 1100, height: 700))
+    #expect(StudioFenster.mindestens(CGSize(width: 1600, height: 450)) == CGSize(width: 1600, height: 520))
     #expect(StudioFenster.standardTitel == "Kortex Studio")
 }
 
@@ -442,12 +444,12 @@ private func url(_ s: String) -> URL { URL(string: s)! }
     // zweiter Bildschirm rechts davon, tiefer angeordnet (Ursprung nicht bei 0)
     let zweiter = CGRect(x: 1920, y: -400, width: 2560, height: 1440)
     #expect(StudioFenster.startrahmen(sichtbar: zweiter) == CGRect(x: 2300, y: -255, width: 1800, height: 1150))
-    // kleiner Bildschirm: das Fenster füllt die sichtbare Fläche (Minimum 1100×700 gilt trotzdem)
+    // kleiner Bildschirm: das Fenster füllt die sichtbare Fläche (Minimum 720×520 gilt trotzdem)
     let klein = CGRect(x: 0, y: 0, width: 1280, height: 775)
     #expect(StudioFenster.startrahmen(sichtbar: klein) == klein)
-    // Bildschirm kleiner als das Minimum (1024×677 wie auf dem CI-Läufer): das Fenster behält 1100×700, bündig oben links
-    let winzig = CGRect(x: 0, y: 25, width: 1024, height: 677)
-    #expect(StudioFenster.startrahmen(sichtbar: winzig) == CGRect(x: 0, y: 2, width: 1100, height: 700))
+    // Bildschirm kleiner als das Minimum (hier 640×480): das Fenster behält 720×520, bündig oben links
+    let winzig = CGRect(x: 0, y: 25, width: 640, height: 480)
+    #expect(StudioFenster.startrahmen(sichtbar: winzig) == CGRect(x: 0, y: -15, width: 720, height: 520))
 }
 
 @Test func mittigKuerztAufDieFlaeche() {
@@ -504,10 +506,10 @@ private func url(_ s: String) -> URL { URL(string: s)! }
 }
 
 @Test func geholterRahmenWirdNieKleinerAlsDasMinimum() {
-    let winzig = CGRect(x: 0, y: 25, width: 1024, height: 677)
+    let winzig = CGRect(x: 0, y: 25, width: 640, height: 480)
     let r = FensterGeometrie.aufBildschirmHolen(CGRect(x: 2000, y: 100, width: 1500, height: 900), bildschirme: [winzig], minimum: StudioFenster.minimum)
-    #expect(r == CGRect(x: 0, y: 2, width: 1100, height: 700), "Bildschirm weg, Hauptbildschirm kleiner als das Minimum: Minimum, oben links bündig")
-    let r2 = FensterGeometrie.aufBildschirmHolen(CGRect(x: 100, y: 50, width: 1100, height: 700), bildschirme: [winzig], minimum: StudioFenster.minimum)
+    #expect(r == CGRect(x: 0, y: -15, width: 720, height: 520), "Bildschirm weg, Hauptbildschirm kleiner als das Minimum: Minimum, oben links bündig")
+    let r2 = FensterGeometrie.aufBildschirmHolen(CGRect(x: 100, y: 50, width: 720, height: 520), bildschirme: [winzig], minimum: StudioFenster.minimum)
     #expect(r2.size == StudioFenster.minimum && r2.maxY == winzig.maxY && r2.minX == 0)
 }
 

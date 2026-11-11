@@ -55,7 +55,8 @@ export function erzeugeBereiche(bereiche) {
     gehe(ziel);
     return ziel.id;
   };
-  return { weiter, aktuell: () => { const l = sichtbare(); const i = aktueller(l); return i < 0 ? null : l[i].id; }, ids: () => sichtbare().map((b) => b.id) };
+  const geheZu = (id) => { const b = bereiche.find((x) => x.id === id); if (b) gehe(b); };
+  return { weiter, gehe: geheZu, aktuell: () => { const l = sichtbare(); const i = aktueller(l); return i < 0 ? null : l[i].id; }, ids: () => sichtbare().map((b) => b.id) };
 }
 
 // ---------- 3. Esc-Stapel

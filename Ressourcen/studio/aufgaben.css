@@ -131,3 +131,6 @@ body.au-zieht-aktiv, body.au-zieht-aktiv * { cursor: grabbing !important; }
 
 @media (max-width: 900px) { .au-brett { grid-template-columns: repeat(4, minmax(220px, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { .au-karte.neu { animation: none; } }
+/* Leeres oder fehlerhaftes Board: der Hinweis füllt die Breite des Fensters (nicht die der vier Spalten, die sonst scrollen), schmal bleibt er in der Mitte */
+.au-brett:has(> .au-leer:not(.klein)) { display: flex; overflow-x: hidden; }
+.au-leer p { max-width: min(380px, 100%); }

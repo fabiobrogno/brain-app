@@ -137,7 +137,7 @@ export function baueAufgaben(host, ctx) {
   const hinweis = h("div", { klasse: "au-hinweis", role: "status", hidden: true, "data-aufgaben-hinweis": "" },
     symbol("schild", GROESSE.norm), h("span", { text: TA.nichtVertraut }), knopf({ text: TA.bestaetigen, aufKlick: () => ctx.fragVertrauen() }));
   const ansage = h("div", { klasse: "au-ansage", role: "status", "aria-live": "polite" });
-  const brett = h("div", { klasse: "au-brett", "data-aufgaben-brett": "" });
+  const brett = h("div", { klasse: "au-brett", "data-aufgaben-brett": "", "data-kanten-x": true });
   const wurzel = h("section", { klasse: "au", "aria-label": TA.titel, "data-ansicht": "aufgaben" },
     h("header", { klasse: "au-kopf" },
       h("div", { klasse: "au-titelzeile" }, h("h2", { klasse: "au-titel-h" }, symbol("aufgaben", GROESSE.gross), h("span", { text: TA.titel })), zahlEl),

@@ -99,3 +99,7 @@
 @media (prefers-reduced-motion: reduce) { .st-ladebalken { opacity: 1 !important; animation: none !important; } }
 :root[data-bewegung="reduziert"] .st-ladebalken { opacity: 1 !important; animation: none !important; }
 .st { white-space: nowrap; min-width: 0; }
+/* waagerecht (data-kanten-x, bewegung.js): das Board in schmalen Fenstern läuft zu der Seite hin aus, wohin es weiterscrollt */
+[data-kanten-x][data-kante-x="rechts"] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
+[data-kanten-x][data-kante-x="links"] { -webkit-mask-image: linear-gradient(to right, transparent, #000 28px); mask-image: linear-gradient(to right, transparent, #000 28px); }
+[data-kanten-x][data-kante-x="beide"] { -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); }

@@ -1,0 +1,49 @@
+/* Schmale Fenster und Split View (R4-7). Die Stufen folgen allein aus der Fensterbreite (app.js: begrenzeBreiten, data-seite / data-info-ueber / data-wechsel am #app):
+     ≥ 960 px   Seitenleiste in der Reihe (ein/aus mit ⌃⌘S)
+     < 960 px   Seitenleiste nur als Überlagerung (Knopf links in der Kopfzeile oder ⌃⌘S; Esc, Klick daneben oder ein Ziel schließen sie)
+     < 1256 px  Eigenschaften klappen ein; „Eigenschaften“ öffnet sie als Überlagerung rechts (kein Quetschen des Editors)
+     < 680 px   Liste und Editor im Wechsel; „Notizen“ links in der Kopfzeile bringt die Liste zurück
+   Kopfzeile, Statusleiste und Dialoge haben eigene Stufen (hauptfenster.css, Container-Abfragen). */
+
+#app { position: relative; }
+
+/* ---------- Seitenleiste als Überlagerung ---------- */
+.seite-scrim { display: none; }
+#app:not([data-seite="an"]) .griff[data-griff="seite"] { display: none; }
+#app[data-seite="schwebt"] .seite-scrim { display: block; position: fixed; inset: 0; z-index: 40; background: color-mix(in srgb, var(--text) 14%, transparent); animation: schmal-ein var(--d-panel, 200ms) var(--ease-out, ease-out); }
+#app[data-seite="schwebt"] #seite { position: fixed; top: 0; left: 0; bottom: 28px; width: var(--b-seite-voll); z-index: 41; box-shadow: var(--schatten-float); animation: schmal-seite var(--d-panel, 200ms) var(--ease-out, ease-out);
+  background: linear-gradient(var(--seite), var(--seite)), var(--papier); }
+html[data-glas] #app[data-seite="schwebt"] #seite { background: linear-gradient(var(--seite), var(--seite)), var(--papier); }
+@keyframes schmal-ein { from { opacity: 0; } }
+@keyframes schmal-seite { from { opacity: 0; transform: translateX(-14px); } }
+/* Schmal verschwindet die geschlossene Seitenleiste sofort (sie gleitet nicht in eine 0 px breite Spalte, wo ihr Inhalt für einen Augenblick gequetscht stünde) */
+@media (max-width: 959px) { #app[data-seite="aus"] #seite { visibility: hidden; transition: none; } }
+/* Ohne Seitenleiste in der Reihe läuft die Kopfzeile bis zum linken Rand: die Ampel der Mac-App braucht dort ihren Platz */
+#app:not([data-seite="an"]) .kopf { padding-left: max(16px, var(--ampel-platz, 0px)); }
+
+/* ---------- Eigenschaften als Überlagerung ---------- */
+#app[data-info-ueber="ja"]:not([data-frage="an"][data-frage-modus="schiebt"]) { --b-rechts: 0px; }
+#app[data-info-ueber="ja"] .griff[data-griff="info"] { display: none; }
+#app[data-info-ueber="ja"] #info { position: absolute; top: var(--kopf-h); right: 0; bottom: 0; width: var(--b-info-voll); z-index: 30; box-shadow: var(--schatten-float); border-left-color: var(--linie-stark); animation: schmal-info var(--d-panel, 200ms) var(--ease-out, ease-out); }
+@keyframes schmal-info { from { opacity: 0; transform: translateX(14px); } }
+
+/* ---------- Kopfzeile: Überlauf-Menü „…“ ----------
+   Unter 660 px Kopfbreite (Inhaltsbreite; Fenster ≈ 690 px) (Wechsel-Fenster, schmale Fenster mit Eigenschaften) wandern die Werkzeuge der Notiz und der Verlauf ins Menü. */
+.knopf-mehr { display: none; }
+@container kopf (max-width: 660px) {
+  .kopf .werkzeuge, #knopf-verlauf { display: none; }
+  .knopf-mehr { display: grid; }
+}
+
+/* ---------- Liste und Editor im Wechsel (< 680 px) ---------- */
+.knopf-liste { display: none; flex: none; padding: 0 8px 0 6px; }
+#app[data-wechsel="haupt"] .knopf-liste { display: inline-flex; }
+#app[data-wechsel] .griff[data-griff="liste"] { display: none; }
+#app[data-wechsel="liste"] { grid-template-columns: var(--b-seite) minmax(0, 1fr) 0 var(--b-rechts); }
+#app[data-wechsel="liste"] #haupt { display: none; }
+#app[data-wechsel="haupt"] { grid-template-columns: var(--b-seite) 0 minmax(0, 1fr) var(--b-rechts); }
+#app[data-wechsel="haupt"] #liste { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  #app[data-seite="schwebt"] .seite-scrim, #app[data-seite="schwebt"] #seite, #app[data-info-ueber="ja"] #info { animation: none; }
+}
