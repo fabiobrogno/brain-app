@@ -379,7 +379,31 @@ export function tabellenErweiterung(ctx, { neuZeichnen, fokusGeaendert }) {
     },
     provide: (f) => EditorView.decorations.from(f, (w) => w.deko),
   });
+  // Pfeiltasten von außen in eine Tabelle (R4-2): der Fokus geht in die erste (Pfeil ab/rechts) bzw. letzte Zeile (Pfeil auf/links) statt in den Quelltext —
+  // die Tabelle bleibt ein Gitter, nichts springt. Wer den Quelltext will, nimmt den Rohtext-Modus oder „Als Text bearbeiten“.
+  const eintritt = (vertikal, vor) => (view) => {
+    const { state } = view, sel = state.selection;
+    if (ctx.roh?.() || state.readOnly || sel.ranges.length !== 1 || !sel.main.empty || tabelleAmCursor(state, sel.main.head)) return false;
+    const bereiche = tabellenBereiche(state);
+    if (!bereiche.length) return false;
+    const kopf = sel.main.head;
+    const ziel = (vertikal ? view.moveVertically(sel.main, vor) : view.moveByChar(sel.main, vor)).head;
+    const zeile = state.doc.lineAt(kopf).number;
+    const b = bereiche.find((x) => (ziel >= x.von && ziel <= x.bis)
+      || (vertikal && vor && ziel > x.bis && kopf < x.von && zeile + 1 === state.doc.lineAt(x.von).number)
+      || (vertikal && !vor && ziel < x.von && kopf > x.bis && zeile - 1 === state.doc.lineAt(x.bis).number));
+    if (!b) return false;
+    const m = L.parseTabelle(state.doc.sliceString(b.von, b.bis));
+    if (!m) return false;
+    const letzte = m.zeilen.length - 1, spalten = m.ausr.length - 1;
+    fokussiere(view, b.von, vor ? 0 : letzte, vertikal || vor ? 0 : spalten, true, 10);
+    return true;
+  };
   return [feld, Prec.high(keymap.of([
+    { key: "ArrowDown", run: eintritt(true, true) },
+    { key: "ArrowUp", run: eintritt(true, false) },
+    { key: "ArrowRight", run: eintritt(false, true) },
+    { key: "ArrowLeft", run: eintritt(false, false) },
     { key: "Tab", run: (v) => rohTab(v, false) },
     { key: "Shift-Tab", run: (v) => rohTab(v, true) },
     { key: "Enter", run: (v) => rohEnter(v) },

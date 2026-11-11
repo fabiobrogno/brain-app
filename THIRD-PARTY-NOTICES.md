@@ -199,11 +199,11 @@ POSSIBILITY OF SUCH DAMAGE.
 ## CodeMirror 6 und Lezer (Markdown-Editor)
 
 `studio/vendor/codemirror.bundle.js` ist ein einmal mit esbuild gebautes Bündel (Quelle und Neubau: `Werkzeuge/editor-bundle/`, ohne
-Änderungen am Quelltext der Pakete). Enthalten sind die Pakete (alle MIT): @codemirror/state 6.7.6, @codemirror/view 6.43.15,
+Änderungen am Quelltext der Pakete); die Sprachen der Code-Blöcke liegen als `sprache-<Kennung>.js` daneben (gleicher Bau, werden erst bei Bedarf geladen). Enthalten sind die Pakete (alle MIT): @codemirror/state 6.7.6, @codemirror/view 6.43.15,
 @codemirror/commands 6.11.1, @codemirror/language 6.13.1, @codemirror/lang-markdown 6.5.2, @codemirror/lang-html 6.4.12,
 @codemirror/lang-css 6.3.1, @codemirror/lang-javascript 6.2.5, @codemirror/lint 6.9.7, @codemirror/autocomplete 6.20.4,
 @codemirror/search 6.7.2, @lezer/common 1.5.4, @lezer/highlight 1.2.5, @lezer/lr 1.4.11, @lezer/markdown 1.8.1, @lezer/html 1.3.13,
-@lezer/css 1.3.9, @lezer/javascript 1.5.6, @marijn/find-cluster-break 1.0.4, crelt 1.0.7, style-mod 4.1.4, w3c-keyname 2.2.8.
+@lezer/css 1.3.9, @lezer/javascript 1.5.6, @codemirror/lang-json 6.0.2, @codemirror/lang-python 6.2.1, @codemirror/lang-yaml 6.1.3, @codemirror/lang-sql 6.10.0, @codemirror/legacy-modes 6.5.5, @lezer/json 1.0.3, @lezer/python 1.1.19, @lezer/yaml 1.0.4, @marijn/find-cluster-break 1.0.4, crelt 1.0.7, style-mod 4.1.4, w3c-keyname 2.2.8.
 Projekt: https://codemirror.net
 
 ```
