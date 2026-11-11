@@ -193,7 +193,7 @@ function entfernen(home) {
 }
 
 // Stand als eine JSON-Zeile (liest nur): wie viele der Brain-Hooks eingetragen sind, ob die Statuszeile von Brain ist, wie viele Brain-Befehle da sind.
-const KONTO_IM_BEFEHL = /(?:^|\s)--konto[ =]'?(k_[0-9a-f]{8}|[^\s']*)'?(?:\s|$)/;
+const KONTO_IM_BEFEHL = /(?:^|\s)--konto[ =]'?(k_[0-9a-f]{8}|[^\s';]*)'?(?:\s|;|$)/; // ";" beendet die Kennung in der Windows-Form (`… --konto k_x; else exit 0; fi`)
 function stand(home) {
   const s = liesSettings(join(home, "settings.json"));
   let da = 0, neu = 0;

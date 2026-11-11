@@ -217,13 +217,13 @@ Abschluss der Runde: Vorschau für den Nutzer neu starten (hell, dunkel, großer
 **CI je Plattform (Pflicht = in `ci-ok`)**
 
 - Linux: alles Pflicht (wie bisher).
-- Windows jetzt Pflicht: Node-Tests, Vertrauensschranke, Kern-Unit-Tests, Electron-Hülle, Paket-Rauchtest (außer arm64-Bau).
+- Windows jetzt Pflicht: Node-Tests, Vertrauensschranke, Kern-Unit-Tests (mit den 21 übersprungenen, siehe Offen 2), Electron-Hülle, Paket-Rauchtest (außer arm64-Bau).
 - Windows weiter Messung (`continue-on-error`): nur die Oberflächentests (Playwright, 4 Teile). Stand der letzten Messung: rund 20 rote Tests von ~1100.
 
 **Offen (ehrlich)**
 
 1. Windows-UI, Ursache noch ungeklärt (nur im Lauf gemessen, kein Windows-Rechner zum Nachstellen): `posteingang.spec` (3: Verwerfen/Übernehmen ohne Wirkung), `konflikt.spec` (1), `umbenennen.spec` (2), `browser-modus.spec` (2, Anmelden im Browser), `einrichtung.spec:900`, `vorschau-frage.spec` (2, Platzhalter-Claude), `zusammenbau.spec` (Spaltenbreite), `aktivitaet.spec:74`, `glocke.spec:402` (Tab-Fokus), `ki-text-aktionen.spec:317`, `schreiben.spec:424`, `tags-export.spec:215` (Zwischenablage mit `\r`?). `ki-konten.spec` (5) war ein CSS-Escape der Windows-Pfade, behoben (Bestätigung steht im Lauf). Tor erst, wenn diese Liste 0 ist.
-2. Windows-Kern, bewusst übersprungen mit Vermerk „R4-8 offen“ (`nurUnix`): 15 Tests der Pflege (`test-pflege-*`, `test-konto-hooks:141`, `test-pflege-b3:56`). Gemeinsamer Verdacht: der Test-pre-commit-Hook läuft in der Arbeitskopie nicht (Prüfung wird nicht rot), danach bleibt eine Arbeitskopie liegen und reißt Folgetests („already exists“); außerdem die Attrappe `claude` (`fake-sonnet`, Exit 4). Zusätzlich übersprungen, weil nur Unix: Verzeichnisrechte (chmod, 3 Tests), `Read(//Users/…)`-Regelmuster (Form für Windows-Laufwerke in Claude-Code-Rechten ungeklärt), relative POSIX-Pfade (W1-Pfadformen).
+2. Windows-Kern, bewusst übersprungen mit Vermerk „R4-8 offen“ (`nurUnix`): 21 Tests (`test-pflege-*`, `test-tageslauf-schreiben/-lauf/-lauf-grenzen`, `test-konto-hooks:141`, `test-pflege-b3:56`, `test-pflege-zurueck-nichts:106`). Gemeinsamer Verdacht: der Test-pre-commit-Hook wird in der Arbeitskopie unter Windows nicht wirksam (die Prüfung wird nicht rot, der Commit geht durch; `BRAIN_GIT_HOOKS_ERLAUBT` ist mit dem Pfadtrenner `;` behoben, die Wirkung blieb), danach bleibt eine Arbeitskopie liegen und reißt Folgetests („already exists“); außerdem die Attrappe `claude` (`fake-sonnet`, Exit 4, Ursache nicht gesehen). Das ist die wichtigste Frage für Windows-Nutzer: **sperrt der pre-commit-Hook der Tageslauf-Arbeitskopie dort wirklich?** (Die Vertrauensschranke vor git selbst ist getestet und Tor.) Zusätzlich übersprungen, weil nur Unix: Verzeichnisrechte (chmod, 3 Tests), `Read(//Users/…)`-Regelmuster (Form für Windows-Laufwerke in Claude-Code-Rechten ungeklärt), relative POSIX-Pfade (W1-Pfadformen).
 3. UI-Zeitgrenzen: auf Windows nur geloggt (Skelett-Deckkraft), Dichte-Leiter der Kontingent-Leiste übersprungen (Schriftmaße).
 4. Nicht in der CI prüfbar: echter Linux-Desktop (Wayland/GNOME-Tray), SmartScreen, Update-Weg zwischen zwei Betas.
 
