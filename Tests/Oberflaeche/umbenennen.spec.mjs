@@ -87,7 +87,7 @@ test("F2 benennt die offene Notiz im Titel um: Editor und Tab-Titel folgen, Date
   await page.keyboard.press("Enter");
   await expect(page.locator('[data-dialog="dateiaktion"]')).toHaveCount(0);
   await expect(page.locator("#pfad .krume.aktuell")).toHaveText("Einzelstück");
-  await expect(page.locator("#pfad")).toHaveAttribute("title", "30_ablage/Einzelstück.md");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "30_ablage/Einzelstück.md");
   await expect(toastMit(page, "Umbenannt")).toBeVisible(); // die Oberfläche zeigt es sofort, die Platte folgt mit der Antwort der Werkstatt
   expect(existsSync(join(vault, "30_ablage/Einzelstück.md"))).toBe(true);
   expect(lies("30_ablage/Einzelstück.md")).toBe("# Einzelstück\n\nNichts verlinkt hierher.\n");
@@ -133,7 +133,7 @@ test("Ordner umbenennen: ungültiger Name zeigt einen Hinweis und wird nicht üb
   await expect(zeile(page, "20_projekte/Backwaren")).toBeVisible();
   expect(existsSync(join(vault, "20_projekte/Backwaren/Kuchen.md"))).toBe(true);
   expect(lies("20_projekte/Backwaren/Brot.md")).toBe("# Brot\n\nSiehe [[Backwaren/Kuchen]] und [Kuchen](Kuchen.md).\n");
-  await expect(page.locator("#pfad")).toHaveAttribute("title", "20_projekte/Backwaren/Kuchen.md");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "20_projekte/Backwaren/Kuchen.md");
 });
 
 test("Verschieben über den Ordner-Wähler: Suchen, Pfeiltasten, Enter; Verweise folgen; Rückgängig bringt die Notiz zurück", async ({ page }) => {
@@ -151,11 +151,11 @@ test("Verschieben über den Ordner-Wähler: Suchen, Pfeiltasten, Enter; Verweise
   // Zutaten wird per Titel verlinkt: es gibt nichts anzupassen, also keine Rückfrage
   await expect(toastMit(page, "Verschoben")).toBeVisible();
   expect(existsSync(join(vault, "30_ablage/Zutaten.md"))).toBe(true);
-  await expect(page.locator("#pfad")).toHaveAttribute("title", "30_ablage/Zutaten.md");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "30_ablage/Zutaten.md");
   await toastMit(page, "Verschoben").locator("a").click();
   await expect(toastMit(page, "Verschieben rückgängig gemacht")).toBeVisible();
   expect(existsSync(join(vault, "20_projekte/Zutaten.md"))).toBe(true);
-  await expect(page.locator("#pfad")).toHaveAttribute("title", "20_projekte/Zutaten.md");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "20_projekte/Zutaten.md");
 });
 
 test("Ziehen und Ablegen: Notizkarte auf einen Ordner; ein Ordner auf einen Ordner; nicht in sich selbst", async ({ page }) => {
@@ -197,7 +197,7 @@ test("In den Papierkorb: Rückfrage mit den Verlinkenden, ⌘⌫ auf der Karte, 
   expect(lies("20_projekte/Zutaten.md")).toBe("# Zutaten\n\nMehl, Zucker.\n");
   // ⌘⌫ auf der Karte ohne Verweise: sofort, ohne Rückfrage
   await karte(page, "30_ablage/Einzelnes.md").click();
-  await expect(page.locator("#pfad")).toHaveAttribute("title", "30_ablage/Einzelnes.md");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "30_ablage/Einzelnes.md");
   await page.locator("#liste-koerper").focus();
   await page.keyboard.press("Meta+Backspace");
   await expect(toastMit(page, "In den Papierkorb gelegt").last()).toBeVisible();
@@ -274,7 +274,7 @@ test("Umbenennen aus einem anderen Fenster (oder von einer KI): die offene Notiz
   await oeffne(page, "30_ablage/Einzelnes.md");
   const r = await page.request.post(server.url + "api/notiz/verschieben", { data: { pfad: "30_ablage/Einzelnes.md", ziel: "20_projekte" } });
   expect(r.ok()).toBe(true);
-  await expect(page.locator("#pfad")).toHaveAttribute("title", "20_projekte/Einzelnes.md", { timeout: 15000 });
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "20_projekte/Einzelnes.md", { timeout: 15000 });
 });
 
 test("⌘⌫ ohne sichtbar fokussierte Notiz (Fokus im Nichts, Kopfzeile) legt nichts in den Papierkorb", async ({ page }) => {

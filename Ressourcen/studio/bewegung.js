@@ -156,22 +156,33 @@ export function kantenInstallieren() {
   new MutationObserver(() => { if (!t) t = setTimeout(() => { t = 0; suche(); }, 120); }).observe(document.body, { childList: true, subtree: true });
 }
 
-// ======================================================= Tooltips für Symbolknöpfe
-// Jeder Knopf mit `title` (ohne Text, nur Symbol) bekommt statt des trägen System-Tooltips den eigenen (.bs-tipp): nach 500 ms bei der Maus, sofort bei Tastaturfokus.
-// Das `title` wird nur solange der Tooltip gezeigt wird entfernt (kein doppelter) und danach wieder gesetzt; der zugängliche Name bleibt (aria-label wird bei Bedarf ergänzt).
+// ======================================================= Tooltips (R4-3)
+// Kein sichtbares Element trägt ein natives `title`: ein Beobachter nimmt jedes `title` (auch spätere und neu gesetzte) weg und legt den Text in `data-tipp-text`;
+// daraus zeigt EIN eigener Tooltip (.bs-tipp) nach 500 ms bei der Maus, sofort bei Tastaturfokus. Der zugängliche Name bleibt: ein Element ohne Text und ohne aria-label bekommt den Tipp als aria-label.
+// Ausnahmen (bewusst): <title> in SVG ist ein Element, kein Attribut; <iframe title> und <abbr> gibt es im Studio nicht.
 let tippEl = null, tippTimer = 0, tippAnker = null;
 function tippWeg() {
   clearTimeout(tippTimer);
-  tippEl?.remove(); tippEl = null;
-  if (tippAnker && tippAnker.dataset.tippText != null) { tippAnker.setAttribute("title", tippAnker.dataset.tippText); delete tippAnker.dataset.tippText; }
-  tippAnker = null;
+  tippEl?.remove(); tippEl = null; tippAnker = null;
+}
+function nimmTitle(el) {
+  const t = el.getAttribute("title");
+  if (t == null) return;
+  el.removeAttribute("title");
+  if (!t) { delete el.dataset.tippText; return; }
+  el.dataset.tippText = t;
+  if (!el.getAttribute("aria-label") && !el.getAttribute("aria-labelledby") && !el.textContent.trim() && !(el instanceof HTMLInputElement)) el.setAttribute("aria-label", t);
+}
+function nimmTitleBaum(wurzel) {
+  if (!(wurzel instanceof Element)) return;
+  if (wurzel.hasAttribute("title")) nimmTitle(wurzel);
+  for (const el of wurzel.querySelectorAll("[title]")) nimmTitle(el);
 }
 function tippZeige(el) {
-  const text = el.getAttribute("title") || el.dataset.tippText;
+  const text = el.dataset.tippText;
   if (!text || !el.isConnected) return;
   tippWeg();
-  if (!el.getAttribute("aria-label") && !el.textContent.trim()) el.setAttribute("aria-label", text);
-  el.dataset.tippText = text; el.removeAttribute("title"); tippAnker = el;
+  tippAnker = el;
   tippEl = h("div", { klasse: "bs-tipp", role: "tooltip", text });
   (document.getElementById("menue-host") || document.body).append(tippEl);
   const r = el.getBoundingClientRect(), bw = tippEl.offsetWidth, bh = tippEl.offsetHeight;
@@ -182,7 +193,10 @@ function tippZeige(el) {
   tippEl.classList.add("offen");
 }
 export function tippsInstallieren() {
-  const ziel = (e) => { const t = e.target instanceof Element ? e.target.closest("button[title], [role=button][title], a[title], [data-tipp-text]") : null; return t && !t.closest(".menue, .bs-liste") ? t : null; };
+  nimmTitleBaum(document.documentElement);
+  new MutationObserver((ms) => { for (const m of ms) { if (m.type === "attributes") nimmTitle(m.target); else m.addedNodes.forEach(nimmTitleBaum); } })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ["title"], childList: true, subtree: true });
+  const ziel = (e) => { const t = e.target instanceof Element ? e.target.closest("[data-tipp-text]") : null; return t && !t.closest(".menue, .bs-liste") ? t : null; };
   document.addEventListener("pointerover", (e) => {
     if (e.pointerType === "touch") return;
     const t = ziel(e);

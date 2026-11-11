@@ -34,6 +34,7 @@ import { erzeugeGlocke } from "./glocke.js"; // P8b: Glocke in der Kopfzeile mit
 import { TG } from "./texte-glocke.js";
 import { baueKiZeile } from "./ki-zeile.js";
 import { ruhenetz, kantenInstallieren, tippsInstallieren, huepfe, fliege, blendeEin, klappeZu, ruhig, dauer } from "./bewegung.js"; // P4: Bewegung mit Bedeutung
+import { merkeFokus, gibFokus, fokusSobald, erzeugeBereiche, installiereEscStapel, sichtbar as istSichtbar } from "./tastatur.js"; // R4-3: Bereiche (F6), Esc-Stapel, Fokus zurückgeben
 import { windungLaden } from "./windung.js";
 import { erzeugeDateiaktionen } from "./dateiaktionen.js"; // Umbenennen, Verschieben, Papierkorb
 import { erzeugeTags } from "./tags.js"; // Tags: Seitenleiste, Filter, Umbenennen
@@ -71,7 +72,7 @@ const S = {
   pruef: new Map(), aktuellePruefung: null,
   git: null, offline: false, gesundheit: null, rueckfragen: null, syncLaeuft: false, syncFehler: null, ki: null, kiGeladen: false, kiVerbunden: false,
   zuletzt: [], suche: { aktiv: false, treffer: [], auswahl: 0, frage: "", ergebnis: null },
-  infoAn: leseLokal("infoAn", true), roh: leseLokal("roh", false), breit: false, theme: "system", modus: "hell", darst: null,
+  infoAn: leseLokal("infoAn", true), seiteAus: leseLokal("seiteAus", false) === true, roh: leseLokal("roh", false), breit: false, theme: "system", modus: "hell", darst: null,
   ladeNr: 0, bereit: false,
   umstellung: null,                          // P7c: { altlasten, umgestellt, angefangen } oder null (alter Werkzeug-Ordner im Vault und Stand der Umstellung)
   zeigeZurueckgestellt: false,               // Posteingang: false = offene Notizen, true = die mit „Später“ zurückgestellten
@@ -166,6 +167,7 @@ $("knopf-verlauf").replaceChildren(symbol("uhr", 16)); $("knopf-verlauf").title 
 $("knopf-info").replaceChildren(symbol("seitenleiste", 16)); $("knopf-info").title = T.werkzeuge.eigenschaften; $("knopf-info").setAttribute("aria-label", T.eigenschaften.titel);
 $("knopf-verlauf").addEventListener("click", () => oeffneVerlauf());
 $("knopf-info").addEventListener("click", () => umschalteInfo());
+$("knopf-seite").replaceChildren(symbol("seitenleiste", 16)); $("knopf-seite").addEventListener("click", () => umschalteSeite());
 $("kopf-suche").addEventListener("click", () => oeffnePalette());
 $("knopf-suche").replaceChildren(symbol("suche", 16));
 $("knopf-neu").replaceChildren(symbol("plus", 16));
@@ -1679,8 +1681,10 @@ async function zeichneVerlauf() {
 function oeffneVerlauf() {
   if (S.sicht.art === "verlauf") { schliesseVerlauf(); return; }
   S.vorVerlauf = S.sicht;
+  merkeFokus("verlauf");
   waehleSicht({ art: "verlauf" }, { merken: false });
   zeichneStatus();
+  fokusSobald(".vl-zeile", $("liste-koerper"), { ersatz: $("liste-koerper") }); // der Verlauf lädt nach: der Fokus geht auf die erste Fassung
 }
 function schliesseVerlauf() {
   schliesseDiff();
@@ -1688,6 +1692,7 @@ function schliesseVerlauf() {
   S.vorVerlauf = null;
   waehleSicht(zurueck);
   zeichneStatus();
+  gibFokus("verlauf", $("knopf-verlauf"));
 }
 let diffInst = null;
 async function zeigeDiff(d) {
@@ -2748,6 +2753,8 @@ function oeffnePalette(vorgabe = "") {
     [TF.befehl, kz.anzeige("frage"), () => frage.oeffne()], [T.befehle.suche, kz.anzeige("suche-vault"), fokusSuche], [T.befehle.inNotiz, kz.anzeige("suche-notiz"), () => ed.suchen()], [T.befehle.info, kz.anzeige("info"), umschalteInfo], [T.befehle.gesundheit, "", oeffneGesundheit], [T.befehle.nutzung, "", oeffneNutzung],
     [T.befehle.posteingang, kz.anzeige("gehe-posteingang"), () => waehleSicht({ art: "bereich", id: "inbox" })], [T.befehle.alleNotizen, kz.anzeige("gehe-alle"), () => waehleSicht({ art: "bereich", id: "alle" })], [T.befehle.aufgaben, kz.anzeige("gehe-aufgaben"), () => waehleSicht({ art: "bereich", id: "aufgaben" })],
     [T.liste.verlauf, kz.anzeige("verlauf"), oeffneVerlauf], [TG.titel, kz.anzeige("mitteilungen"), () => glocke.oeffne()],
+    ...[["seitenleiste-links", umschalteSeite], ["hell-dunkel", () => fuehreBefehlAus("hell-dunkel")], ["region-weiter", () => bereiche.weiter(1)], ["region-zurueck", () => bereiche.weiter(-1)], ["kuerzel-hilfe", oeffneKuerzel]]
+      .map(([id, tun]) => [kz.REGISTER.befehle.find((bf) => bf.id === id).name, kz.anzeige(id), tun]),
     ...(S.pfad && S.bearbeitbar ? [["tabelle-einfuegen", () => ed.fuegeTabelleEin()], ...FORMAT_BEFEHLE.map(([id, name]) => [id, () => ed.formatiere(name)])].map(([id, tun]) => [kz.REGISTER.befehle.find((b) => b.id === id).name, kz.anzeige(id), () => { ed.fokus(); tun(); }]) : []),
     ...(S.pfad && S.bearbeitbar ? kiTextRef.paletteBefehle() : []), // KI-Aktionen, solange im Editor Text markiert ist
     ...(kannOrdnerZeigen() ? [[ordnerBefehlName(), "", () => aktion("ordner-zeigen", S.pfad || undefined)]] : []),
@@ -2881,6 +2888,18 @@ function umschalteInfo() {
   if (frage.istOffen()) { frage.schliesse(); S.infoAn = true; S.infoErzwungen = !!S.infoEng; speichereLokal("infoAn", true); glatt(() => begrenzeBreiten()); return; }
   glatt(() => umschalteInfoInnen());
 }
+// Linke Seitenleiste ein- und ausblenden (R4-3, ⌃⌘S und der Knopf ganz links in der Kopfzeile). Aus: die Spalte hat 0 px und ist für die Tastatur nicht erreichbar; der Fokus geht in die Liste.
+function umschalteSeite() {
+  const warDrin = $("seite").contains(document.activeElement);
+  glatt(() => { S.seiteAus = !S.seiteAus; speichereLokal("seiteAus", S.seiteAus); begrenzeBreiten(); });
+  if (S.seiteAus && warDrin) $("liste-koerper").focus({ preventScroll: true });
+  zeichneSeiteKnopf();
+}
+function zeichneSeiteKnopf() {
+  const k = $("knopf-seite"); if (!k) return;
+  const text = `${S.seiteAus ? T.kopf.seiteEin : T.kopf.seiteAus} (${kz.anzeige("seitenleiste-links")})`;
+  k.title = text; k.setAttribute("aria-label", S.seiteAus ? T.kopf.seiteEin : T.kopf.seiteAus);
+}
 function umschalteInfoInnen() {
   if (infoSichtbar()) { S.infoAn = false; S.infoErzwungen = false; }
   else { S.infoAn = true; S.infoErzwungen = !!S.infoEng; }
@@ -2901,7 +2920,7 @@ const E = { ...W }; // tatsächliche Breiten, wenn das Fenster nicht für alle W
 const EDITOR_MIN = 420, EDITOR_MIN_MIT_INFO = 560, EDITOR_MIN_MIT_FRAGE = 400;
 function wendeBreitenAn() {
   const app = $("app");
-  app.style.setProperty("--b-seite", E.seite + "px"); app.style.setProperty("--b-liste", E.liste + "px"); app.style.setProperty("--b-info-voll", E.info + "px"); app.style.setProperty("--b-frage", E.frage + "px");
+  app.style.setProperty("--b-seite", (S.seiteAus ? 0 : E.seite) + "px"); app.style.setProperty("--b-liste", E.liste + "px"); app.style.setProperty("--b-info-voll", E.info + "px"); app.style.setProperty("--b-frage", E.frage + "px");
 }
 // Öffnen und Schließen der rechten Spalte gleiten (280 ms, frage.css/studio.css); beim Ziehen und Verkleinern des Fensters nicht — das soll der Hand folgen.
 let glattTimer = null;
@@ -2919,16 +2938,18 @@ function begrenzeBreiten() {
   if (!S.infoEng) S.infoErzwungen = false;
   const zeige = infoSichtbar();
   Object.assign(E, W);
-  let uebrig = window.innerWidth - E.seite - E.liste - (zeige ? E.info : 0) - (zeige && !S.infoErzwungen ? EDITOR_MIN_MIT_INFO : EDITOR_MIN);
+  let uebrig = window.innerWidth - (S.seiteAus ? 0 : E.seite) - E.liste - (zeige ? E.info : 0) - (zeige && !S.infoErzwungen ? EDITOR_MIN_MIT_INFO : EDITOR_MIN);
   for (const n of zeige ? ["info", "liste", "seite"] : ["liste", "seite"]) {
     if (uebrig >= 0) break;
     const nimm = Math.min(E[n] - GRENZEN[n][0], -uebrig); E[n] -= nimm; uebrig += nimm;
   }
   $("app").dataset.info = zeige ? "an" : "aus";
+  $("app").dataset.seite = S.seiteAus ? "aus" : "an";
+  $("knopf-seite")?.setAttribute("aria-pressed", String(!S.seiteAus));
   $("knopf-info")?.setAttribute("aria-pressed", String(zeige && !S.frageAn));
   // „Frag deinen Vault“ nimmt den Platz der Eigenschaften und schiebt den Editor beiseite, wenn er danach noch mindestens 400 px hat; sonst liegt das Panel darüber
   if (S.frageAn) {
-    const schiebt = window.innerWidth - E.seite - E.liste - E.frage >= EDITOR_MIN_MIT_FRAGE;
+    const schiebt = window.innerWidth - (S.seiteAus ? 0 : E.seite) - E.liste - E.frage >= EDITOR_MIN_MIT_FRAGE;
     $("app").dataset.frageModus = schiebt ? "schiebt" : "deckt";
   } else delete $("app").dataset.frageModus;
   wendeBreitenAn();
@@ -2964,9 +2985,12 @@ function richteGriffeEin() {
 function oeffneKuerzel() {
   if (dialogOffen()) return;
   const K = T.kuerzel;
+  // Alle Befehle des Registers nach Gruppen (gezeigt wird das gerade gültige Kürzel; ohne Kürzel entfällt die Zeile), dann die festen Tasten (Liste, Seitenleiste, Board)
+  const aus = kz.REGISTER.gruppen.map((g) => ({ name: g.name, zeilen: kz.REGISTER.befehle.filter((bf) => bf.gruppe === g.id && (bf.id !== "frage-global" && bf.id !== "kortex-zeigen")).map((bf) => [{ id: bf.id }, bf.name]) }));
+  const gruppen = [...aus.filter((g) => g.zeilen.length && !(g.name === "Überall auf dem Mac" && !inApp())), ...K.fest];
   const d = dialog({
     titel: K.titel, breit: true,
-    rumpf: [h("div", { klasse: "kuerzel" }, ...K.gruppen.map((g) => h("section", null, h("h3", { text: g.name }),
+    rumpf: [h("div", { klasse: "kuerzel" }, ...gruppen.map((g) => h("section", null, h("h3", { text: g.name }),
       h("dl", null, ...g.zeilen.map(([tasten, was]) => [typeof tasten === "string" ? tasten : kz.anzeigeTeile(tasten.id).join(" "), was]).filter(([tasten]) => tasten).flatMap(([tasten, was]) => [h("dt", null, ...tasten.split(" ").map((x) => h("kbd", { text: x }))), h("dd", { text: was })])))))],
     knoepfe: [baueKnopf({ text: K.anpassen, aktion: "kuerzel-anpassen", aufKlick: () => { d.schliessen(); setTimeout(() => oeffneEinstellungenSeite({ bereich: "tasten" }), 0); } }),
       baueKnopf({ text: K.schliessen, variante: "primaer", aufKlick: () => d.schliessen() })],
@@ -2993,6 +3017,7 @@ kz.anmelden("suche-vault", () => fokusSuche());
 kz.anmelden("suche-notiz", () => ed.suchen(), (e) => !dialogOffen() && !!S.pfad && !e.target.closest?.("input, textarea, select"));
 kz.anmelden("info", () => umschalteInfo());
 kz.anmelden("seitenleiste", () => umschalteInfo(), () => !!S.info?.vault); // ⌘\ (P3): dieselbe rechte Spalte wie „info“, der Knopf neben „Frag“
+kz.anmelden("seitenleiste-links", () => umschalteSeite(), () => !!S.info?.vault);
 kz.anmelden("commit", () => oeffneCommit());
 kz.anmelden("kuerzel-hilfe", () => oeffneKuerzel());
 // Formatieren, Tabelle, Einfügen (Runde 3b): gelten nur, wenn der Editor (oder eine Tabellenzelle) den Fokus hat
@@ -3001,6 +3026,27 @@ for (const [id, name] of FORMAT_BEFEHLE) kz.anmelden(id, () => ed.formatiere(nam
 kz.anmelden("tabelle-einfuegen", () => ed.fuegeTabelleEin(), imEditor);
 kz.anmelden("einfuegen-text", () => ed.einfuegenAlsText(), imEditor);
 kz.anmelden("mitteilungen", () => glocke.umschalten(), () => !!S.info?.vault && !dialogOffen());
+// Bereiche (R4-3): F6 / ⇧F6 springt Seitenleiste → Liste → Editor (oder Board) → Eigenschaften oder Frag-Spalte; ausgeblendete Bereiche werden übersprungen
+const bereiche = erzeugeBereiche([
+  { id: "seite", wurzel: () => $("seite"), fokus: () => ($("seite").querySelector('[aria-current="true"]') || $("seite").querySelector("#bereiche button, #bereiche a, .eintrag") || $("seite").querySelector("button"))?.focus({ preventScroll: true }) },
+  { id: "liste", wurzel: () => $("liste"), fokus: () => $("liste-koerper").focus({ preventScroll: true }) },
+  { id: "haupt", wurzel: () => (istAufgabenSicht() && !S.aufgabeDatei ? $("aufgaben-host") : $("haupt")),
+    fokus: () => { if (istAufgabenSicht() && !S.aufgabeDatei) ($("aufgaben-host").querySelector("[data-karte-aufgabe]") || $("aufgaben-host").querySelector("button, input"))?.focus({ preventScroll: true }); else if (S.pfad) ed.fokus(); else ($("haupt").querySelector("button, [tabindex]") || $("haupt"))?.focus({ preventScroll: true }); } },
+  { id: "rechts", wurzel: () => (frage.istOffen() ? $("frage") : infoSichtbar() ? $("info") : null),
+    fokus: () => { const w = frage.istOffen() ? $("frage") : $("info"); (w.querySelector("textarea, button:not([disabled]), input, [tabindex]:not([tabindex='-1'])") || (w.tabIndex = -1, w))?.focus({ preventScroll: true }); } },
+]);
+kz.anmelden("region-weiter", () => bereiche.weiter(1), () => !!S.info?.vault && !dialogOffen());
+kz.anmelden("region-zurueck", () => bereiche.weiter(-1), () => !!S.info?.vault && !dialogOffen());
+// Esc als EIN Stapel (R4-3, tastatur.js): Popover/Menü und Dialog schließen sich selbst zuerst; dann Format-Leiste → Panels (Verlauf, Frag) → Suche → Textauswahl.
+// Jede Schicht schließt genau sich und gibt den Fokus an den Auslöser zurück.
+const textAuswahlOffen = () => { try { return !!S.pfad && ed.editorHatFokus() && !ed.view.state.selection.main.empty; } catch { return false; } };
+installiereEscStapel([
+  { id: "format-leiste", offen: () => !!document.querySelector('.format-leiste[data-offen="ja"]') && textAuswahlOffen(), zu: () => { const v = ed.view; v.dispatch({ selection: { anchor: v.state.selection.main.head } }); } },
+  { id: "verlauf", offen: () => S.sicht.art === "verlauf", zu: () => schliesseVerlauf() },
+  { id: "frage", offen: () => frage.istOffen(), zu: () => (frage.laeuft() ? frage.abbrechen() : frage.schliesse()) },
+  { id: "suche", offen: () => S.suche.aktiv, zu: () => { schliesseSuche(); $("liste-koerper").focus({ preventScroll: true }); } },
+  { id: "auswahl", offen: () => textAuswahlOffen(), zu: () => { const v = ed.view; v.dispatch({ selection: { anchor: v.state.selection.main.head } }); } },
+], { gesperrt: () => einstOffen() || document.body.dataset.einrichtung === "offen" });
 
 window.addEventListener("beforeunload", () => { if (S.dirty) { clearTimeout(speicherTimer); speichere(); } });
 window.addEventListener("focus", () => { planeGitRefresh(); if (S.info?.vault) { ladeBaum(); ladeInfoLeise().then(() => fragVertrauenEinmal()); einrichtungsListe?.aktualisiere(); } });

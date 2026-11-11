@@ -55,8 +55,8 @@ test("App-Menü: kommt aus dem Kürzel-Register (Strg statt ⌘), deutsche Texte
   expect(nach("befehl-posteingang")).toMatchObject({ label: "Posteingang", accelerator: `${STRG}+1` });
   expect(nach("fest-beenden")).toMatchObject({ label: "Beenden", accelerator: `${STRG}+Q` });
   if (!MAC) expect(nach("befehl-neu").registriert).toBe(false);
-  // Kein Eintrag mit Befehl ohne Kürzel hat eins (hell-dunkel hat im Register keines)
-  expect(nach("befehl-hell-dunkel").accelerator).toBeNull();
+  // Hell/Dunkel hat seit R4-3 ein Standardkürzel (⌥⌘L); Windows/Linux zeigen es nur an
+  expect(nach("befehl-hell-dunkel").accelerator).toBe(MAC ? "Alt+Command+L" : "Ctrl+Alt+L");
   // Ein Klick löst den Befehl im Studio aus: „Neue Notiz“ öffnet den Editor
   await klickeMenue(app, "befehl-neu");
   await expect(fenster.locator("#editor .cm-editor")).toBeVisible({ timeout: 15_000 });

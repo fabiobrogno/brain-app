@@ -152,7 +152,7 @@ test("Konflikt: „⌘K gehört schon zu „Befehlspalette“.“ mit Abbrechen 
   expect(gespeichert()).toEqual({ "neue-notiz": "Cmd+K" });
   await expect(zeile(page, "neue-notiz").locator('[data-marke="doppelt"]')).toBeVisible();
   await expect(zeile(page, "palette").locator('[data-marke="doppelt"]')).toBeVisible();
-  await expect(zeile(page, "palette").locator('[data-marke="doppelt"]')).toHaveAttribute("title", /Neue Notiz/);
+  await expect(zeile(page, "palette").locator('[data-marke="doppelt"]')).toHaveAttribute("data-tipp-text", /Neue Notiz/);
   // Filter „Konflikte“ zeigt genau diese beiden
   await page.locator('[data-kz-filter="konflikte"]').click();
   await expect(page.locator('[data-bereich="tasten"] [data-zeile]:visible')).toHaveCount(2);

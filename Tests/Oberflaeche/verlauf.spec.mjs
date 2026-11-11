@@ -295,8 +295,8 @@ test("Liste: Maße, Ladezustand, haftender Tageskopf, Fokusring", async ({ page 
   // Fokusring: Tab in die Liste, sichtbarer Rahmen
   await page.evaluate(() => { document.getElementById("t-host").scrollTop = 0; document.activeElement?.blur(); });
   await page.keyboard.press("Tab");
-  const ring = await page.evaluate(() => { const e = document.activeElement; const c = getComputedStyle(e); return { art: e.dataset.art, stil: c.outlineStyle, breite: c.outlineWidth }; });
-  expect(ring).toEqual({ art: "tag", stil: "solid", breite: "2px" });
+  const ring = await page.evaluate(() => { const e = document.activeElement; const c = getComputedStyle(e); return { art: e.dataset.art, ring: c.boxShadow !== "none" }; });
+  expect(ring).toEqual({ art: "tag", ring: true }); // R4-3: ein Fokusring für alles (box-shadow), kein outline
 });
 
 test("Liste: leer, Fehler mit „Nochmal versuchen“, Kein-Git", async ({ page }) => {
