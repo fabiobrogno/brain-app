@@ -91,16 +91,18 @@ class CodeKopf extends WidgetType {
     k.setAttribute("aria-label", T.editor.code.kopieren);
     k.dataset.tippText = T.editor.code.kopieren;
     k.append(symbol(SYMBOL_KOPIE));
-    k.addEventListener("mousedown", (e) => {
-      e.preventDefault(); // Cursor und Fokus bleiben im Text
-      if (e.button !== 0) return;
+    k.tabIndex = 0;
+    const kopiereJetzt = () => {
       const text = codeText(view.state, view.posAtDOM(d));
       if (text === null) return;
       kopiere(text).then(() => {
         k.classList.add("kopiert"); k.replaceChildren(symbol(SYMBOL_HAKEN)); k.setAttribute("aria-label", T.editor.code.kopiert);
         setTimeout(() => { k.classList.remove("kopiert"); k.replaceChildren(symbol(SYMBOL_KOPIE)); k.setAttribute("aria-label", T.editor.code.kopieren); }, 1400);
       }, () => {});
-    });
+    };
+    k.addEventListener("mousedown", (e) => e.preventDefault()); // Cursor und Fokus bleiben im Text
+    k.addEventListener("click", (e) => { if (e.button === 0) kopiereJetzt(); });
+    k.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); kopiereJetzt(); } });
     d.append(k);
     return d;
   }

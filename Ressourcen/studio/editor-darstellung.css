@@ -43,7 +43,8 @@
 .cm-code-sprache { letter-spacing: .02em; padding: 0 2px; }
 .cm-code-kopieren { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r-s); cursor: pointer; color: var(--text-3);
   opacity: .0; transition: opacity var(--d-1) var(--ease-out), background var(--d-1) var(--ease-out), color var(--d-1) var(--ease-out); }
-.cm-codeblock-anfang:hover .cm-code-kopieren, .cm-code-kopieren.kopiert { opacity: 1; }
+.cm-codeblock-anfang:hover .cm-code-kopieren, .cm-code-kopieren:focus, .cm-code-kopieren.kopiert { opacity: 1; }
+.cm-code-kopieren:focus-visible, .cm-callout-pfeil:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
 .cm-code-kopieren:hover { background: var(--hover); color: var(--text); }
 .cm-code-kopieren.kopiert { color: var(--gruen); }
 @media (hover: none) { .cm-code-kopieren { opacity: 1; } }

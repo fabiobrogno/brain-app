@@ -1,7 +1,10 @@
 // Sprachen für Code-Blöcke: jede wird erst geladen, wenn ein Block sie braucht (dynamisches import → eigene Datei neben dem Bündel).
 import { LanguageDescription, LanguageSupport, StreamLanguage } from "@codemirror/language";
 
-const L = (name, alias, laden) => LanguageDescription.of({ name, alias, load: laden });
+// Lädt eine Sprache nicht (Datei fehlt, Netz, Sperre), liefert load() EINMAL eine einfarbige Ersatzsprache: CodeMirror merkt sich das Ergebnis
+// und fragt nicht bei jeder Auswertung neu nach der Datei.
+const einfarbig = () => new LanguageSupport(StreamLanguage.define({ token(strom) { strom.skipToEnd(); return null; } }));
+const L = (name, alias, laden) => LanguageDescription.of({ name, alias, load: () => Promise.resolve().then(laden).catch(einfarbig) });
 
 export const sprachListe = [
   L("JavaScript", ["js", "jsx", "javascript", "mjs", "cjs", "node", "ts", "typescript", "tsx"], () => import("@codemirror/lang-javascript").then((m) => m.javascript({ jsx: true, typescript: true }))),

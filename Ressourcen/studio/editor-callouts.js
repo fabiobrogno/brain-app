@@ -6,7 +6,7 @@ import * as CM from "./vendor/codemirror.bundle.js";
 import { parseKopf, istZu, bekannt } from "./callout-logik.js";
 import { T } from "./texte.js";
 
-const { StateField, StateEffect, Decoration, WidgetType, EditorView, Prec, keymap, EditorSelection } = CM;
+const { EditorState, StateField, StateEffect, Decoration, WidgetType, EditorView, Prec, keymap, EditorSelection } = CM;
 
 const umschalten = StateEffect.define(); // Wert = Anfang des Callouts im Dokument
 const fokusEffekt = StateEffect.define();
@@ -74,7 +74,7 @@ class KopfWidget extends WidgetType {
     d.className = "cm-callout-symbol";
     d.append(symbolEl(this.art));
     if (this.titel) { const t = document.createElement("span"); t.className = "cm-callout-titel"; t.textContent = this.titel; d.append(t); }
-    if (this.falt) d.addEventListener("mousedown", (e) => { e.preventDefault(); if (e.button === 0) schalte(view, view.posAtDOM(d), this.ref); });
+    if (this.falt) macheSchalter(d, view, this.ref);
     return d;
   }
   ignoreEvent() { return !!this.falt; }
@@ -89,10 +89,18 @@ class PfeilWidget extends WidgetType {
     d.setAttribute("aria-expanded", String(!this.zu));
     d.setAttribute("aria-label", this.zu ? T.editor.callout.aufklappen : T.editor.callout.zuklappen);
     d.append(symbolEl("pfeil"));
-    d.addEventListener("mousedown", (e) => { e.preventDefault(); if (e.button === 0) schalte(view, view.posAtDOM(d), this.ref); });
+    d.tabIndex = 0;
+    macheSchalter(d, view, this.ref);
     return d;
   }
   ignoreEvent() { return true; }
+}
+
+// Klick, Enter und Leertaste klappen auf und zu (mousedown hält den Cursor im Text); der Fokus geht danach in den Editor zurück
+function macheSchalter(el, view, ref) {
+  el.addEventListener("mousedown", (e) => e.preventDefault());
+  el.addEventListener("click", (e) => { if (e.button === 0) schalte(view, view.posAtDOM(el), ref); });
+  el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); schalte(view, view.posAtDOM(el), ref); view.focus(); } });
 }
 
 // Anfang des Callouts, zu dem ein Widget gehört (das Widget steht am Anfang der Kopfzeile)
@@ -103,11 +111,11 @@ function schalte(view, pos, ref) {
 
 // ---------- Dekorationen ----------
 function baue(ref, state, liste, flips, fokus, roh) {
-  if (roh || !liste.length) return { deko: Decoration.none, atomar: Decoration.none };
+  if (roh || !liste.length) return { deko: Decoration.none, atomar: Decoration.none, zugeklappt: [] };
   const doc = state.doc;
   const aktiv = new Set();
   if (fokus) for (const r of state.selection.ranges) for (let n = doc.lineAt(r.from).number, e = doc.lineAt(r.to).number; n <= e; n++) aktiv.add(n);
-  const alle = [], atomar = [];
+  const alle = [], atomar = [], zugeklappt = [];
   for (const c of liste) {
     const l1 = doc.lineAt(c.von), l2 = doc.lineAt(c.bis);
     const { kopf } = c;
@@ -128,7 +136,7 @@ function baue(ref, state, liste, flips, fokus, roh) {
       alle.push(Decoration.replace({ widget: new KopfWidget(ref, kopf.art, standardTitel(kopf), kopf.falt) }).range(c.von, l1.to));
     }
     if (zu) {
-      if (c.bis > l1.to) { const r = Decoration.replace({}).range(l1.to, c.bis); alle.push(r); atomar.push(r); }
+      if (c.bis > l1.to) { const r = Decoration.replace({}).range(l1.to, c.bis); alle.push(r); atomar.push(r); zugeklappt.push({ von: c.von, a: l1.to, b: c.bis }); }
       continue;
     }
     for (let n = l1.number + 1; n <= l2.number; n++) {
@@ -142,7 +150,7 @@ function baue(ref, state, liste, flips, fokus, roh) {
       alle.push(Decoration.mark({ class: aktiv.has(nr) ? "cm-marke" : "cm-callout-marke" }).range(m.von, bis));
     }
   }
-  return { deko: Decoration.set(alle, true), atomar: Decoration.set(atomar, true) };
+  return { deko: Decoration.set(alle, true), atomar: Decoration.set(atomar, true), zugeklappt };
 }
 
 export function calloutErweiterung(ctx, { neuZeichnen }) {
@@ -174,6 +182,18 @@ export function calloutErweiterung(ctx, { neuZeichnen }) {
       EditorView.decorations.from(f, (w) => w.deko),
       EditorView.atomicRanges.of((view) => view.state.field(f).atomar),
       EditorView.focusChangeEffect.of((_s, hat) => fokusEffekt.of(hat)),
+      // Der versteckte Rumpf eines zugeklappten Callouts wird nie unsichtbar gelöscht (wie der Datei-Kopf): Entf, ⌥⌦ am Kopfende, Auswahl-Löschen usw.
+      // werden verworfen und klappen das Callout auf; Eingaben gehen durch und klappen es ebenfalls auf.
+      EditorState.transactionFilter.of((tr) => {
+        if (!tr.docChanged || !(tr.isUserEvent("delete") || tr.isUserEvent("input"))) return tr;
+        const w = tr.startState.field(f, false);
+        if (!w || !w.zugeklappt?.length) return tr;
+        const getroffen = new Set();
+        tr.changes.iterChangedRanges((von, bis) => { for (const z of w.zugeklappt) if (von <= z.b && bis > z.a) getroffen.add(z.von); });
+        if (!getroffen.size) return tr;
+        const effekte = [...getroffen].map((v) => umschalten.of(v));
+        return tr.isUserEvent("delete") ? [{ effects: effekte }] : [tr, { effects: effekte }];
+      }),
     ],
   });
   ref.feld = feld;

@@ -256,10 +256,12 @@ test("„Nichts gefunden“: eine Zeile, das Menü bleibt gleich hoch und an der
   await oeffne(page);
   await page.keyboard.type("/tab");
   await expect(eintraege(page)).toHaveCount(1);
+  await page.waitForTimeout(150); // die Lage wird nach dem Update gemessen: erst danach steht sie
   const vorher = await page.locator(".sm").boundingBox();
   await page.keyboard.type("x");
   await expect(page.locator(".sm-leer")).toHaveText("Nichts gefunden");
   await expect(eintraege(page)).toHaveCount(0);
+  await page.waitForTimeout(150);
   const nachher = await page.locator(".sm").boundingBox();
   expect(Math.abs(nachher.height - vorher.height)).toBeLessThanOrEqual(1);
   expect(Math.abs(nachher.y - vorher.y)).toBeLessThanOrEqual(1);

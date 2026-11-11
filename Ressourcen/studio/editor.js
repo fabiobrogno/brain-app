@@ -623,6 +623,24 @@ const zeilenendeEingabe = EditorState.transactionFilter.of((tr) => { // Rest der
   return [{ changes: aenderungen, selection: tr.selection, effects: tr.effects, annotations: tr.annotations, scrollIntoView: tr.scrollIntoView }];
 });
 
+// Leere Titelzeile „# “: das „#“ ist unsichtbar (Platzhalter „Titel“), der Cursor darf nie davor stehen — sonst ergäbe Tippen „X# “.
+// Jede Auswahl in dieser Zeile (Pos1, ⌘←, Klick davor) wird ans Zeilenende geklemmt. Im Rohmodus gilt der Text, wie er ist.
+const leereTitelzeile = (ctx) => EditorState.transactionFilter.of((tr) => {
+  if (!tr.selection || tr.docChanged || ctx.roh?.()) return tr;
+  const st = tr.startState, doc = st.doc;
+  let geaendert = false;
+  const neu = tr.selection.ranges.map((r) => {
+    const klemme = (pos) => {
+      const z = doc.lineAt(pos);
+      if (pos >= z.to || !/^#[ \t]*$/.test(z.text)) return pos;
+      for (let n = CM.syntaxTree(st).resolveInner(z.from, 1); n; n = n.parent) if (n.name === "ATXHeading1") { geaendert = true; return z.to; }
+      return pos;
+    };
+    return EditorSelection.range(klemme(r.anchor), klemme(r.head));
+  });
+  return geaendert ? [tr, { selection: EditorSelection.create(neu, tr.selection.mainIndex) }] : tr;
+});
+
 // ---------- Aufbau ----------
 export function erstelleEditor(eltern, ctx) {
   let schreibschutzFeld = new CM.Compartment();
@@ -647,6 +665,7 @@ export function erstelleEditor(eltern, ctx) {
     FM.einfuegenErweiterung(ctx),
     formatLeiste(ctx),
     schraegstrichMenue({ ...ctx, kopfBereich: kopfBereich }),
+    leereTitelzeile(ctx),
     vorschauPlugin(ctx),
     ...calloutErweiterung(ctx, { neuZeichnen }).felder,
     ...(ctx.anhaenge ? anhangErweiterung(ctx.anhaenge, ctx) : []),
