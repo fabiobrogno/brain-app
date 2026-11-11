@@ -43,10 +43,10 @@
 
 /* ---------- Kopfzeile: Brotkrumen, Suchfeld, Knöpfe ---------- */
 .kopf { grid-area: kopf; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--linie); background: var(--papier); min-width: 0; container: kopf / inline-size; position: relative; z-index: 2; }
-/* min-width: der Titel bleibt stehen – bei Platzmangel schrumpft zuerst das Suchfeld (bis 150 px), nie umgekehrt */
-.kopf-links { flex: 1 1 0; min-width: 260px; display: flex; align-items: center; gap: 4px; }
+/* Der Titel bleibt stehen: bei Platzmangel schrumpft zuerst das Suchfeld bis 150 px (Gewicht 100 gegen 0,01), erst danach die linke Gruppe bis 260 px */
+.kopf-links { flex: 1 0.01 auto; min-width: 260px; display: flex; align-items: center; gap: 4px; }
 .kopf-rechts { flex: none; display: flex; align-items: center; gap: 2px; min-width: 0; }
-.kopf-suche { flex: 0 1 300px; min-width: 150px; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px 0 10px; border: 1px solid var(--eingabe); background: var(--eingabe-grund); box-shadow: var(--schatten-klein); border-radius: var(--r);
+.kopf-suche { flex: 0 100 300px; min-width: 150px; /* schrumpft zuerst (Gewicht 100), erst danach der Titel */ display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px 0 10px; border: 1px solid var(--eingabe); background: var(--eingabe-grund); box-shadow: var(--schatten-klein); border-radius: var(--r);
   cursor: pointer; text-align: left; color: var(--text-3); font-size: 13px; transition: border-color var(--d-fast), background var(--d-fast); }
 .kopf-suche:hover { border-color: var(--linie-stark); background: var(--hover); }
 .kopf-suche > .sym { color: var(--text-3); flex: none; }
@@ -62,7 +62,7 @@
 .kopf .werkzeuge { margin-right: 4px; padding-right: 6px; border-right: 1px solid var(--linie); }
 .kopf .speicherstand { margin-right: 6px; }
 .kopf .pille { margin-right: 6px; }
-.pfad { display: flex; align-items: center; gap: 2px; flex: 1 1 0; min-width: 0; color: var(--text-2); font-size: 13px; white-space: nowrap; overflow: hidden; }
+.pfad { display: flex; align-items: center; gap: 2px; flex: 1 1 auto; min-width: 0; color: var(--text-2); font-size: 13px; white-space: nowrap; overflow: hidden; }
 .pfad .krume { overflow: hidden; text-overflow: ellipsis; padding: 2px 4px; border-radius: 4px; flex: 0 5 auto; min-width: 0; }
 .pfad .krume.aktuell { color: var(--text); font-weight: 500; flex: 0 1 auto; }
 .pfad .krume.link { cursor: pointer; } .pfad .krume.link:hover { background: var(--hover); color: var(--text); }
