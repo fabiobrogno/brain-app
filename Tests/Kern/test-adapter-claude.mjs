@@ -8,10 +8,10 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 const KF = KERN.split("\\").join("/");   // der Kern, auf den die Hooks zeigen (nicht mehr der Vault)
 const q = (p) => shellQuote(p);   // POSIX: einfache Anführungszeichen
-// Erwarteter Hook-Befehl: macOS/Linux der Starter-Befehl (still bei fehlendem Starter, siehe pfade.mjs#hookBefehl), Windows Node mit dem Kern-Pfad.
-const hk = (name, args = "") => (process.platform === "win32" ? `${nodeBefehl()} ${q(`${KF}/adapters/claude-code/${name}.mjs`)}${args}` : hookBefehl(starterPfad(), name, args));
+// Erwarteter Hook-Befehl: der Starter-Befehl (still bei fehlendem Starter, siehe pfade.mjs#hookBefehl; Windows: kortex.cmd).
+const hk = (name, args = "") => hookBefehl(starterPfad(), name, args);
 // Gehört dieser Befehl zum Hook <name>? (neue Form `hook <name>`; auf Windows der Pfad)
-const ist = (c, name) => typeof c === "string" && (process.platform === "win32" ? c.includes(`/claude-code/${name}.mjs`) : new RegExp(`kortex' hook ${name}(?: |$)`).test(c));
+const ist = (c, name) => typeof c === "string" && new RegExp(`kortex(?:\\.cmd)?' hook ${name}(?: |;|$)`).test(c);
 const inst = fileURLToPath(new URL("../adapters/claude-code/install.mjs", import.meta.url));
 // HOME/USERPROFILE immer auf ein Temp-Verzeichnis: das echte ~/.claude wird nie gelesen oder geschrieben.
 const TEMP_HOME = mkdtempSync(join(tmpdir(), "adapter-home-"));
@@ -242,6 +242,7 @@ test("Hook-Befehle laufen über den Starter (kein fester Node-/Kern-Pfad); alter
     for (const c of cmds) {
       assert.ok(!c.includes("--vault") && !c.includes("node-start.sh") && !c.includes(".tools"), c);
       if (process.platform !== "win32") assert.ok(c.startsWith(`[ -x ${q(starterPfad())} ] && exec ${q(starterPfad())} hook `) && c.endsWith(" || exit 0"), c);
+      else { const ql = shellQuote(starterPfad().split("\\").join("/"), "linux"); assert.ok(c.startsWith(`if [ -f ${ql} ]; then ${ql} hook `) && c.endsWith("; else exit 0; fi"), c); }
     }
   }
   assert.equal(s.statusLine.command, hk("statusline"));

@@ -85,6 +85,7 @@ test("„stimmt nicht“ wird schon beim Beantworten festgehalten (vor dem Rück
 
 test("kann die Liste nicht geschrieben werden (kein Schreibrecht), bleibt die Antwort UNBEANTWORTET liegen (nichts verloren, keine Prüfung doppelt); nach der Heilung wird sie genau einmal angewendet", (t) => {
   if (typeof process.getuid === "function" && process.getuid() === 0) return t.skip("als root gibt es kein Schreibverbot");
+  if (process.platform === "win32") return t.skip("Verzeichnisrechte (chmod 0555) gibt es unter Windows nicht");
   const v = neuerTestVault({ seiten: { [SEITE]: seitenText({ fm: { name: "alpha" }, rumpf: "# Alpha\n" }) } });
   const ctx = P.neuerLauf(v, { claudeBefehl: FAKE_BEFEHL, jetzt: JETZT });
   const id = R.legeRueckfrageAn(ctx, { typ: "stichprobe", frage: "Stimmt das?", seite: SEITE, felder: { aktion: "s2", commit: "c2" } });

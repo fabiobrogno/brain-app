@@ -107,13 +107,20 @@ export function starteAnmeldung(o) {
 
   // Das Skript für BROWSER: schreibt nur die erste Adresse an die Datei und beendet sich; öffnet nichts.
   let dir = null, urlDatei = null, browser = null;
-  if (programm === "claude" && plattform !== "win32") {
+  if (programm === "claude") {
     dir = mkdtempSync(join(tempWurzel, "kortex-anmelden-"));
     chmodSync(dir, 0o700);
     urlDatei = join(dir, "adresse.txt");
+    if (plattform === "win32") {
+      // Windows: Stapeldatei. `set "u=%~1"` und verzögerte Ausdehnung, damit & | ^ in der Adresse nie als Befehl gelten; % im Pfad der Datei wird verdoppelt.
+      browser = join(dir, "kortex-browser.cmd");
+      // Der Pfad steht VOR der verzögerten Ausdehnung in einer Variable (ein Benutzername mit ! oder ^ bliebe sonst nicht heil), danach nur noch !datei!.
+      writeFileSync(browser, ["@echo off", `set "datei=${urlDatei.replaceAll("%", "%%")}"`, "setlocal EnableDelayedExpansion", 'set "u=%~1"', '>>"!datei!" echo(!u!', "exit /b 0", ""].join("\r\n"));
+    } else {
     browser = join(dir, "kortex-browser");
     writeFileSync(browser, `#!/bin/sh\n# Kortex: meldet nur die Adresse zurück, öffnet keinen Browser.\nprintf '%s\\n' "$1" >> ${shellText(urlDatei)}\nexit 0\n`, { mode: 0o700 });
     chmodSync(browser, 0o700);
+    }
   }
   const raeumeTemp = () => { if (dir) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* egal */ } dir = null; } };
 

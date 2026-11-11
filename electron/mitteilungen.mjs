@@ -28,6 +28,16 @@ export const zielFuer = (art) => (art === "ablage-aufgabe" ? "aufgaben" : art ==
 const STEUER = /[\p{Cc}\p{Cf}]/u;
 const ohneSteuer = (s) => Array.from(String(s)).filter((c) => !STEUER.test(c)).join("");
 
+/**
+ * Was das System zeigt. `subtitle` kennt nur macOS; unter Windows und Linux würde der Vault-Name still verschwinden (bei mehreren Vaults ist er der Hinweis, WOHER die Mitteilung kommt).
+ * Dort steht er darum vor dem Satz im Text: „Mein Vault: hat 2 Aufgaben angelegt.“ → { title, subtitle?, body }
+ */
+export function systemMitteilung(m, plattform = process.platform) {
+  if (!m.untertitel) return { title: m.titel, body: m.text };
+  if (plattform === "darwin") return { title: m.titel, subtitle: m.untertitel, body: m.text };
+  return { title: m.titel, body: `${m.untertitel}: ${m.text}` };
+}
+
 /** „Probe-Mitteilung senden“: umgeht Schalter, Sammelfenster und Drosselung; Klick öffnet das Aktivitätsprotokoll. */
 export const probeMitteilung = ({ ton = false, kennung = "kortex-probe" } = {}) => ({
   kennung, gruppe: "kortex-probe", titel: "Kortex", untertitel: null, text: "So sehen Mitteilungen von Kortex aus.", ton, ziel: "aktivitaet", istProbe: true,

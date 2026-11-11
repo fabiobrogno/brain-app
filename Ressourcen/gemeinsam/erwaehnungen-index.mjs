@@ -71,6 +71,8 @@ class Namenssatz {
     };
   }
   // Führt den Satz mit dem Suchindex nach, höchstens `ms` Millisekunden. → true, wenn nichts mehr offen ist
+  // Ein Stück (200 Notizen) verarbeitet jeder Aufruf immer: Wird der Prozess auf einem ausgelasteten Rechner kurz verdrängt, ist das Budget sonst schon vor dem ersten
+  // Stück verbraucht, und der Satz käme nie voran, solange nur kurze Aufrufe kommen.
   sync(idx, ms = SCHEIBE_MS) {
     const t0 = performance.now();
     if (idx.epoche() !== this.epoche) { this.leere(); this.epoche = idx.epoche(); }
@@ -78,8 +80,10 @@ class Namenssatz {
     if (d.epoche !== this.epoche) return false;
     this.bis = d.bis;
     if (d.dokumente.length) this.warte.push(...d.dokumente);
+    let erstes = true;
     while (this.warte.length) {
-      if (performance.now() - t0 > ms) { this.fertig = false; return false; }
+      if (!erstes && performance.now() - t0 > ms) { this.fertig = false; return false; }
+      erstes = false;
       const stueck = this.warte.splice(0, 200);
       for (const doc of stueck) { if (idx.lebtNr(doc.nr)) this.fuegeEin(doc); }
     }
@@ -164,7 +168,8 @@ export function erzeugeErwaehnungen({ wurzel, index, darfZiel = () => true, darf
     const eintrag = satz.nach.get(pfad);
     const antwort = (extra) => ({ pfad, titel: eintrag?.titel || stamm(pfad), namen: [], notizen: [], anzahlStellen: 0, anzahlNotizen: 0, offen: 0, abgeschnitten: false, vollstaendig: false,
       aufbau: { index: ix.istFertig(), namen: satz.fertig }, ...extra });
-    if (!eintrag || !eintrag.namen.length) return antwort({ vollstaendig: ix.istFertig(), namen: [] });
+    // Kennt der Namenssatz die Notiz (noch) nicht, ist nichts geprüft: „vollständig“ erst, wenn auch er aufgeholt hat (sonst hört die Oberfläche auf zu fragen)
+    if (!eintrag || !eintrag.namen.length) return antwort({ vollstaendig: ix.istFertig() && satz.fertig, namen: [] });
     const namen = eintrag.namen.filter(eindeutig);
     if (!namen.length) return antwort({ vollstaendig: ix.istFertig() && satz.fertig, mehrdeutig: true });
     const gruppen = (n) => n.seq.ae.map((w) => [w]);

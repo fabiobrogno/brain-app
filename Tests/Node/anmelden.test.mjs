@@ -288,7 +288,7 @@ test("Claude: eine umbrochene (abgeschnittene) Adresse aus der Ausgabe gilt nie;
   assert.equal(A.findeAdresse("claude", voll), voll);
 });
 
-test("Claude: wird die Adresse bei 80 Spalten umbrochen, nimmt Kortex die ganze aus der BROWSER-Datei, nicht das erste Stück", { skip: nurUnix("Windows setzt kein BROWSER-Skript (Folgeaufgabe W2: BROWSER als .cmd), die umbrochene Adresse aus der Ausgabe ergibt dort nur das erste Stück") }, async () => {
+test("Claude: wird die Adresse bei 80 Spalten umbrochen, nimmt Kortex die ganze aus der BROWSER-Datei, nicht das erste Stück", async () => {
   const t = aufbau({ modus: "umbrochen", verzoegerung: 600 });
   const r = await t.start({ programm: "claude", neu: "Umbruch" });
   const w = await t.warteAuf(r.j.id, ["wait"]);

@@ -2,6 +2,8 @@
 // oben der Zustand (Vault, „Nur ansehen“, Zähler), dann Studio, Schnell erfassen, Abgleichen · Vault · Einstellungen, Einrichtung · Beenden. Reine Logik OHNE `import "electron"`.
 // Zähler: offene Rückfragen (Zeile wie RueckfragenText.zaehler; die Werkstatt kennt sie nur mit Kit) und neue Mitteilungen (Zahl „ungelesen“ des Aktivitätsprotokolls, wie die Glocke im Studio).
 
+import { execFile } from "node:child_process";
+
 /** Wie RueckfragenText.zaehler (Swift): nie nur eine Zahl. null = unbekannt (ohne Kit gibt es die Zeile nicht, siehe baueTrayVorlage). */
 export function rueckfragenText(anzahl) {
   if (anzahl === null || anzahl === undefined) return "Rückfragen: unbekannt";
@@ -12,13 +14,30 @@ export function mitteilungenText(anzahl) {
   if (!anzahl) return "Keine neuen Mitteilungen";
   return anzahl === 1 ? "1 neue Mitteilung" : `${anzahl} neue Mitteilungen`;
 }
+/** Wie MenueStatus.aufgabenText (Swift): „3 Aufgaben offen · 1 überfällig“, null wenn nichts offen ist (dann steht keine Zeile im Menü). */
+export function aufgabenText(a) {
+  if (!a || !(a.offen > 0)) return null;
+  const offen = a.offen === 1 ? "1 Aufgabe offen" : `${a.offen} Aufgaben offen`;
+  return a.ueberfaellig > 0 ? `${offen} · ${a.ueberfaellig} überfällig` : offen;
+}
+/** Zähler aus der Antwort von /api/aufgaben ({ aufgaben: [{ status, faellig }] }) wie kern/aufgaben.mjs#zaehleAus: offen = nicht erledigt, überfällig = offen mit Fälligkeit vor heute. null = unbekannt. */
+export function aufgabenZaehler(antwort, heute = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })()) {
+  if (!Array.isArray(antwort?.aufgaben)) return null;
+  let offen = 0, ueberfaellig = 0;
+  for (const a of antwort.aufgaben) {
+    if (a?.status === "erledigt") continue;
+    offen++;
+    if (typeof a?.faellig === "string" && a.faellig < heute) ueberfaellig++;
+  }
+  return { offen, ueberfaellig };
+}
 const kurz = (t, max = 56) => { const e = String(t).replace(/\s+/g, " "); return e.length > max ? `${e.slice(0, max - 1)}…` : e; };
 
 /** Tooltip des Symbols: „Kortex“, bei neuen Mitteilungen mit der Zahl. */
 export const trayTitel = (z) => (z.ungelesen > 0 ? `Kortex — ${mitteilungenText(z.ungelesen)}` : "Kortex");
 
 /**
- * z: { vaultName: string|null, nurAnsehen: boolean, rueckfragen: number|null, ungelesen: number, erfassenKuerzel?: Accelerator|null, vaultDa: boolean, updates?: boolean (gibt es Updates in dieser Ausführung) }
+ * z: { vaultName: string|null, nurAnsehen: boolean, rueckfragen: number|null, aufgaben?: { offen, ueberfaellig }|null, ungelesen: number, erfassenKuerzel?: Accelerator|null, vaultDa: boolean, updates?: boolean (gibt es Updates in dieser Ausführung) }
  * aktion: ({ befehl } | { fest }) → void (Klick). → Vorlage für Menu.buildFromTemplate.
  */
 export function baueTrayVorlage(z, aktion) {
@@ -33,6 +52,8 @@ export function baueTrayVorlage(z, aktion) {
     kopf.push(befehl("tray-mitteilungen", mitteilungenText(z.ungelesen), "aktivitaet"));
     if (typeof z.rueckfragen === "number") kopf.push({ id: "tray-rueckfragen", label: rueckfragenText(z.rueckfragen), click: () => aktion({ fest: "studio" }) });
   }
+  const aufgaben = z.vaultDa ? aufgabenText(z.aufgaben) : null;
+  if (aufgaben) kopf.push(befehl("tray-aufgaben", aufgaben, "aufgaben")); // öffnet das Aufgaben-Board (wie in der Menüleiste der Mac-App)
   return [
     ...(kopf.length ? [...kopf, sep] : []),
     fest("tray-studio", "Studio öffnen", "studio"),
@@ -52,7 +73,7 @@ export function baueTrayVorlage(z, aktion) {
 }
 
 /** Liest den Zustand aus den Antworten der Werkstatt (/api/info, /api/aktivitaet?nur=ungelesen&limit=1, /api/rueckfragen); fehlt eine, bleibt der Wert neutral. */
-export function trayZustand({ info, aktivitaet, rueckfragen }, erfassenKuerzel = null) {
+export function trayZustand({ info, aktivitaet, rueckfragen, aufgaben = null }, erfassenKuerzel = null) {
   const vaultDa = typeof info?.vault === "string" && info.vault.length > 0;
   return {
     vaultDa,
@@ -60,6 +81,31 @@ export function trayZustand({ info, aktivitaet, rueckfragen }, erfassenKuerzel =
     nurAnsehen: vaultDa && info?.vertrauen && info.vertrauen.erlaubt === false,
     ungelesen: Number.isInteger(aktivitaet?.ungelesen) && aktivitaet.ungelesen > 0 ? aktivitaet.ungelesen : 0,
     rueckfragen: rueckfragen?.verfuegbar === true && Number.isInteger(rueckfragen.offen) ? rueckfragen.offen : null,
+    aufgaben: vaultDa ? aufgabenZaehler(aufgaben) : null,
     erfassenKuerzel,
   };
 }
+
+/**
+ * Linux: gibt es einen Infobereich, der das Symbol auch zeigt? Electron legt das Symbol über StatusNotifierItem an; ohne „StatusNotifierWatcher“ am Sitzungsbus (z. B. GNOME ohne die
+ * AppIndicator-Erweiterung) bleibt es unsichtbar — und ein Schließen in den Tray hieße: die App läuft weiter und niemand kommt mehr heran. Darum bleibt Kortex nur dann im Tray, wenn der Dienst
+ * da ist; sonst beendet Schließen die App. Fragt `gdbus`, dann `dbus-send`; fehlen beide oder scheitern sie = unbekannt = nein. `ausfuehren(programm, args, optionen, rueckruf)` ist einspritzbar (Tests).
+ */
+export function linuxTraySichtbar({ ausfuehren = execFile, frist = 3000 } = {}) {
+  const NAME = "org.kde.StatusNotifierWatcher";
+  const wege = [
+    ["gdbus", ["call", "--session", "--dest", "org.freedesktop.DBus", "--object-path", "/org/freedesktop/DBus", "--method", "org.freedesktop.DBus.NameHasOwner", NAME]],
+    ["dbus-send", ["--session", "--print-reply", "--dest=org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus.NameHasOwner", `string:${NAME}`]],
+  ];
+  const frage = ([programm, args]) => new Promise((ok) => {
+    try { ausfuehren(programm, args, { timeout: frist, windowsHide: true }, (fehler, aus) => ok(fehler ? null : /\btrue\b/.test(String(aus)))); } catch { ok(null); }
+  });
+  return (async () => { for (const w of wege) { const r = await frage(w); if (r !== null) return r; } return false; })();
+}
+
+/** Hinweis „Kortex wurde beendet, weil kein Infobereich da ist“: nur Linux, nur beim ersten Schließen, nie beim Beenden aus dem Menü, nie im Test, nie wenn der Nutzer das Bleiben selbst verboten hat. */
+export const trayHinweisNoetig = ({ plattform, beendet = false, testmodus = false, schonGezeigt = false, erzwungen = false }) => plattform === "linux" && !beendet && !testmodus && !schonGezeigt && !erzwungen;
+export const TRAY_HINWEIS = Object.freeze({
+  titel: "Kortex wurde beendet",
+  text: "Dein Desktop zeigt kein Tray-Symbol (Infobereich), darum bleibt Kortex nach dem Schließen des Fensters nicht im Hintergrund. Unter GNOME zeigt die Erweiterung „AppIndicator“ das Symbol. Diesen Hinweis siehst du nur einmal.",
+});

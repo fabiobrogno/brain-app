@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, lstatSync, readlinkSync, realpathSync, existsSync, symlinkSync, utimesSync, mkdtempSync, rmSync, unlinkSync, chmodSync } from "node:fs";
-import { join, dirname, relative, basename } from "node:path";
+import { join, dirname, relative, basename, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -733,7 +733,7 @@ test("gedaechtnisPfade/expandiere: ~ wird mit dem übergebenen Home aufgelöst, 
   const home = join(tmpdir(), "heim-x");
   assert.equal(expandiere("~", home), home);
   assert.equal(expandiere("~/.claude", home), join(home, ".claude"));
-  assert.equal(expandiere("/abs/pfad", home), "/abs/pfad");
+  assert.equal(expandiere("/abs/pfad", home), resolve("/abs/pfad")); // Windows: mit Laufwerk
   const p = gedaechtnisPfade({ ...STANDARD, gedaechtnisKonten: ["~/.claude", "~/.claude/", "~/.claude-zwei", " "] }, { home });
   assert.deepEqual(p, { teilen: false, wurzel: join(home, ".claude-gedaechtnis"), konten: [join(home, ".claude"), join(home, ".claude-zwei")] });
   assert.equal(gedaechtnisPfade({ ...STANDARD, gedaechtnisTeilen: "an" }, { home }).teilen, true);

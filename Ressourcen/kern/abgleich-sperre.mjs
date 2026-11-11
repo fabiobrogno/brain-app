@@ -41,12 +41,16 @@ export function nimmSperre(datei, { art = "abgleich", pid = process.pid, jetzt =
   const inhalt = JSON.stringify({ pid, zeit: jetzt, art, marke }) + "\n";
   const freigeben = () => { const o = lies(datei); if (o && o.marke === marke) { try { rmSync(datei, { force: true }); } catch { /* weg oder nicht löschbar */ } } };
   try { mkdirSync(dirname(datei), { recursive: true }); } catch { return { ok: true, freigeben() {} }; }
+  let beschaeftigt = 0;
   for (let versuch = 0; versuch < 4; versuch++) {
     try {
       const fd = openSync(datei, "wx");
       try { writeSync(fd, inhalt); } finally { closeSync(fd); }
       return { ok: true, freigeben };
     } catch (e) {
+      // Windows: eine Datei, die gerade gelöscht wird (Freigabe des Vorgängers, Virenscanner), lässt sich kurz nicht anlegen (EPERM/EBUSY/EACCES statt EEXIST). Das ist KEIN unbeschreibbarer Ordner:
+      // kurz warten und noch einmal (sonst nähmen zwei Prozesse die Sperre zugleich). Bleibt es nach rund 2 s dabei, gilt wie bisher „kein Tor“.
+      if (e && /^(EPERM|EBUSY|EACCES)$/.test(e.code) && process.platform === "win32" && beschaeftigt++ < 100) { versuch--; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20); continue; }
       if (!e || e.code !== "EEXIST") return { ok: true, freigeben() {} };
     }
     const alt = lies(datei);

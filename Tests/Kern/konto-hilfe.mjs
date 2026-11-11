@@ -10,7 +10,10 @@ const imTemp = (p) => { try { const r = realpathSync(p); return r === TEMP || r.
 const KONFIG_ORDNER = ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "CURSOR_CONFIG_DIR", "GEMINI_CLI_HOME"];
 
 export function baueTestUmgebung(extra = {}) {
-  const e = { PATH: "/usr/bin:/bin", BRAIN_TESTMODUS: "1", ...extra };
+  // Windows: tar und die Systemprogramme liegen in System32 (kein /usr/bin); SystemRoot braucht fast jedes Kindprogramm
+  const sys = process.env.SystemRoot || "C:\\Windows";
+  const basis = process.platform === "win32" ? { PATH: `${sys}\\System32;${sys}`, SystemRoot: sys } : { PATH: "/usr/bin:/bin" };
+  const e = { ...basis, BRAIN_TESTMODUS: "1", ...extra };
   for (const k of ["HOME", "BRAIN_APP_SUPPORT"]) {
     if (typeof e[k] !== "string" || !imTemp(e[k])) throw new Error(`baueTestUmgebung: ${k} muss ein Ordner unter dem Temp-Ordner sein (war: ${e[k]})`);
   }
