@@ -118,7 +118,8 @@ test("Liste: Tagesköpfe mit Zählung, Commit-Zeilen mit Zeit, Hash und Zählern
   await sichtbar(koepfe.first());
   await expect(koepfe.nth(0)).toContainText("(2 Commits)");
   await expect(koepfe.nth(1)).toContainText("(1 Commit)");
-  await expect(koepfe.nth(0)).toContainText(/^(Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag), \d{1,2}\. \p{L}+ \d{4}/u);
+  await expect(koepfe.nth(0)).toContainText(/^(Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag), \d{1,2}\. \p{L}+/u); // „Heute“ ohne Jahr (eine Zeile mit Merkmal und Zähler); die anderen Tage mit Jahr (R4-4)
+  await expect(koepfe.nth(1)).toContainText(/\d{4}/);
   const erste = page.locator(".vl-commitzeile:not(.ungesichert)").first();
   await sichtbar(erste);
   await expect(erste.locator(".vl-nachricht")).toHaveText("Notizen aktualisiert (3)");

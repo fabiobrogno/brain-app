@@ -49,10 +49,11 @@ export function relativeZeit(iso, jetzt = Date.now()) {
   return TV.zeit.jahre(Math.floor(tage / 365));
 }
 
-export function tagesTitel(datum) {
+// ohneJahr: für „Heute“/„Gestern“ – das Jahr ist dort klar, und die Zeile mit Merkmal und Zähler bleibt in der schmalen Spalte einzeilig
+export function tagesTitel(datum, { ohneJahr = false } = {}) {
   const d = new Date(String(datum) + "T12:00:00");
   if (Number.isNaN(d.getTime())) return String(datum);
-  return d.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  return d.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", ...(ohneJahr ? {} : { year: "numeric" }) });
 }
 const volleZeit = (iso) => {
   const d = new Date(iso);
@@ -214,7 +215,7 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
     const zu = eingeklappt.has(t.datum);
     const kopf = h("div", { klasse: "vl-zeile vl-tagkopf", role: "treeitem", "aria-level": "1", "aria-expanded": String(!zu), tabindex: "-1", "data-art": "tag", "data-schluessel": "tag:" + t.datum, "data-datum": t.datum },
       h("span", { klasse: "vl-chev" }, zeichen("chevron-unten", 12)),
-      h("span", { klasse: "vl-tagtext", text: tagesTitel(t.datum) }),
+      h("span", { klasse: "vl-tagtext", text: tagesTitel(t.datum, { ohneJahr: !!tagesLabel(t.datum) }) }),
       tagesLabel(t.datum) ? h("span", { klasse: "vl-tagrel", text: tagesLabel(t.datum) }) : null,
       h("span", { klasse: "vl-tagzahl", text: TV.tagZahl(t.commits.length, z.technisch) }));
     const gruppe = h("div", { klasse: "vl-gruppe vl-commits", role: "group", hidden: zu }, t.commits.map((c) => commitBlock(c)));
@@ -253,7 +254,7 @@ export function zeichneVerlauf(host, { api, beiDatei, beiCommitOeffnen, beiGespe
   function statusMarke(st) {
     const klasse = "vl-marke vs-" + st.toLowerCase();
     if (z.technisch) return h("span", { klasse, "aria-label": TV.status[st], title: TV.status[st], text: TV.statusBuchstabe[st] });
-    return h("span", { klasse: klasse + " sym", role: "img", "aria-label": TV.status[st], title: TV.status[st] }, zeichen(TV.statusSymbol[st] || "stift", 11));
+    return h("span", { klasse: klasse + " sym", role: "img", "aria-label": TV.status[st], title: TV.status[st] }, zeichen(TV.statusSymbol[st] || "stift", 12));
   }
 
   function fuelleDateien(gruppe, c) {

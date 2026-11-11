@@ -234,16 +234,14 @@ export function erzeugeDateiaktionen(ctx) {
   }
 
   // ⌘Z / ⇧⌘Z außerhalb des Editors: der letzte Vorgang (Journal der Werkstatt). Mehrfach drücken geht Schritt für Schritt weiter zurück.
-  let stapelLaeuft = false;
-  async function stapelSchritt(wieder) {
-    if (stapelLaeuft) return;
-    stapelLaeuft = true;
-    try {
-      const vault = S.info?.vault;
-      const e = wieder ? stapel.nimmZurueck(vault) : stapel.nimmFertig(vault);
-      if (!e) { toast(wieder ? TD.stapel.leerWieder : TD.stapel.leer, { ms: 2500 }); return; }
-      if (!wieder && e.rueck) await e.rueck(); else await zurueck(e.id, { wieder });
-    } finally { stapelLaeuft = false; }
+  // Schnell hintereinander gedrückt: die Schritte laufen der Reihe nach (nie zwei zugleich, keiner geht verloren)
+  let kette = Promise.resolve();
+  const stapelSchritt = (wieder) => (kette = kette.then(() => stapelEinSchritt(wieder)).catch(() => {}));
+  async function stapelEinSchritt(wieder) {
+    const vault = S.info?.vault;
+    const e = wieder ? stapel.nimmZurueck(vault) : stapel.nimmFertig(vault);
+    if (!e) { toast(wieder ? TD.stapel.leerWieder : TD.stapel.leer, { ms: 2500 }); return; }
+    if (!wieder && e.rueck) await e.rueck(); else await zurueck(e.id, { wieder });
   }
 
   // ───────────── Umbenennen: Notiz ─────────────
