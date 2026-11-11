@@ -60,6 +60,33 @@ test("Info-Spalte: Erwähnungen mit Zeile und Markierung; Code, Links und die No
   await expect(page.locator("#pfad")).toContainText("Lissabon-Tipps");
 });
 
+// Rennen beim Start (CI-Wackler in ki-erwaehnungen.spec): Die ersten Antworten kommen, während die Werkstatt Suchindex bzw. Namenssatz noch aufbaut, und kennen die Notiz
+// noch nicht. Erzwungen: die ersten drei Abrufe beantwortet der Test so (genau die Form der Werkstatt in diesem Zustand), danach antwortet die echte Werkstatt.
+// Die Liste muss trotzdem erscheinen, ohne die Notiz neu zu wählen; für „Diese Notiz erwähnt …“ ebenso.
+test("Index baut beim ersten Abruf noch: die Liste erscheint trotzdem, ohne die Notiz neu zu wählen", async ({ page }) => {
+  const aufbau = [{ index: false, namen: false }, { index: false, namen: false }, { index: true, namen: false }];
+  let abrufe = 0, ausAbrufe = 0;
+  await page.route((u) => u.pathname === "/api/erwaehnungen", (route) => {
+    const a = aufbau[abrufe++];
+    if (!a) return route.continue();
+    const pfad = new URL(route.request().url()).searchParams.get("pfad");
+    return route.fulfill({ json: { pfad, titel: "Kaffee", namen: [], notizen: [], anzahlStellen: 0, anzahlNotizen: 0, offen: 0, abgeschnitten: false, vollstaendig: false, aufbau: a } });
+  });
+  await page.route((u) => u.pathname === "/api/erwaehnungen/aus", (route) => {
+    if (route.request().postDataJSON()?.pfad !== MORGEN || ausAbrufe++ >= 5) return route.continue();
+    return route.fulfill({ json: { pfad: MORGEN, notizen: [], anzahlNotizen: 0, anzahlStellen: 0, vollstaendig: false, aufbau: { index: false, namen: false } } });
+  });
+  await start(page);
+  await waehle(page, KAFFEE);
+  await expect(ein(page)).toBeVisible(); // nicht ausgeblendet, solange die Werkstatt aufbaut
+  await expect(ein(page).locator("[data-erw-summe]")).toHaveText("3 Stellen in 3 Notizen");
+  expect(abrufe).toBeGreaterThan(aufbau.length);
+  // Gegenrichtung: die Notiz Morgenroutine nennt „Espresso“ und „Kaffee“ (die ersten fünf Antworten – mehr, als die Spalte früher abwartete –: Namenssatz baut noch)
+  await waehle(page, MORGEN);
+  await expect(aus(page).locator("[data-erw-summe]")).toHaveText("2 Stellen für 2 Notizen");
+  expect(ausAbrufe).toBeGreaterThan(5);
+});
+
 test("Verlinken einer Stelle: Link in der anderen Notiz, Hinweis mit Rückgängig, Liste und Rückverweise folgen", async ({ page }) => {
   await start(page);
   await waehle(page, KAFFEE);

@@ -377,6 +377,26 @@ test("K1: ein Entwurf ohne Titel, dessen erste Zeilen sich nach dem Säubern lee
   }
 });
 
+// Rennen (CI-Wackler im Test oben): Ein Klick in die Liste öffnet die Karte erst nach 40 ms. Kam ⌘N in dieser Zeit, öffnete die Karte danach über der neuen Notiz,
+// und der Text landete in der angeklickten Notiz. Erzwungen: Klick und ⌘N in derselben Aufgabe, also sicher innerhalb der 40 ms.
+test("K1: Klick auf eine Karte und gleich danach ⌘N: die neue Notiz bleibt offen, ihr Text landet nicht in der angeklickten Notiz", async ({ page }) => {
+  await start(page);
+  const ziel = await page.locator("#liste-koerper [data-karte]").first().getAttribute("data-pfad");
+  const vorher = readFileSync(join(vault, ziel), "utf8");
+  await page.evaluate((p) => {
+    document.querySelector(`#liste-koerper [data-karte][data-pfad="${CSS.escape(p)}"]`).click();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "n", code: "KeyN", metaKey: true, bubbles: true, cancelable: true }));
+  }, ziel);
+  await expect(page.locator("#pfad")).toHaveAttribute("title", "Neue Notiz");
+  await page.waitForTimeout(250); // länger als die 40 ms der Liste: käme der Klick noch hinterher, wäre jetzt die Karte offen
+  await expect(page.locator("#pfad")).toHaveAttribute("title", "Neue Notiz");
+  await setzeText(page, "# Rennen Nachzug\n\nText aus dem Rennen.\n");
+  expect((await page.evaluate(() => window.studio.vorSchliessen())).ok).toBe(true);
+  await expect.poll(() => inboxDateien().includes("rennen-nachzug.md")).toBe(true);
+  expect(readFileSync(join(vault, "00_inbox", "rennen-nachzug.md"), "utf8")).toBe("# Rennen Nachzug\n\nText aus dem Rennen.\n");
+  expect(readFileSync(join(vault, ziel), "utf8")).toBe(vorher);
+});
+
 test("K1: derselbe Fall beim Beenden (vorSchliessen): der Text wird gesichert, nicht verworfen", async ({ page }) => {
   await start(page);
   await page.keyboard.press("Meta+n");

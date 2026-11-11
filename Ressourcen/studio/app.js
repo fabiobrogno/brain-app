@@ -409,6 +409,7 @@ async function legeWikiZielAn(ziel) {
 async function oeffne(pfad, { zeile, spalte, laenge, begriffe, ausListe, ausBoard, verlauf: ausVerlauf = false, zustand = null, beiFehlt = null } = {}) {
   const fund = begriffe || laenge ? { spalte, laenge, begriffe } : undefined;
   if (konfliktInst) { if (konfliktInst.laeuft()) return false; await schliesseKonflikt(konfliktInst.istFertig() ? "fertig" : "liste"); }
+  if (!ausListe) clearTimeout(listenTimer); // ein anderer Weg öffnet: ein Klick in die Liste kurz davor kommt nicht mehr hinterher
   if (pfad === S.pfad) { schliesseDiff(); if (zeile) ed.springeZu(zeile, fund); else if (!ausListe) ed.fokus(); return true; }
   if (S.konflikt) { toast(`Löse zuerst den Konflikt in „${ohneEndung(dateiName(S.pfad))}“.`, { fehler: true }); return false; }
   const nr = ++S.ladeNr;
@@ -458,6 +459,9 @@ async function oeffne(pfad, { zeile, spalte, laenge, begriffe, ausListe, ausBoar
 async function oeffneEntwurf({ text, cursor = null, pfad = null, ordner = null, tag = null }) {
   if (konfliktInst) { if (konfliktInst.laeuft()) return false; await schliesseKonflikt(konfliktInst.istFertig() ? "fertig" : "liste"); }
   if (S.konflikt) { toast(`Löse zuerst den Konflikt in „${ohneEndung(dateiName(S.pfad))}“.`, { fehler: true }); return false; }
+  // Ein Klick in die Liste öffnet erst nach 40 ms (oeffneAusListe). Kam ⌘N in dieser Zeit, öffnete die Karte danach über die neue Notiz,
+  // und was man tippte, landete in der angeklickten Notiz (CI-Wackler schreiben.spec K1). Die neue Notiz ist der letzte Wunsch: der Klick entfällt.
+  clearTimeout(listenTimer);
   const nr = ++S.ladeNr;
   if (!(await sichereVorWechsel())) return false;
   if (nr !== S.ladeNr || S.konflikt) return false;

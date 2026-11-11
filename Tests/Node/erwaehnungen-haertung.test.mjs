@@ -2,7 +2,7 @@
 // Berechtigungen des Journals, Laufzeit von „Alle verlinken“, Werkzeugliste des MCP-Servers. Nur Wegwerf-Ordner.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, statSync, readdirSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmp, schreibe, pfad, g } from "./hilfe.mjs";
 
@@ -186,4 +186,45 @@ test("Lesende POSTs (/aus, /links) gelten nicht als eigene Schreibvorgänge: ein
   const r = (await rufe("GET", "/api/ereignisse", undefined, `seit=0&epoche=${s.epoche}&warte=5`)).j;
   assert.ok(r.ereignisse.some((e) => e.pfad === "n/a.md"), "die Änderung von außen wird gemeldet: " + JSON.stringify(r.ereignisse));
   h.ereignisse.beende?.();
+});
+
+// CI-Wackler (ki-erwaehnungen.spec): Der Suchindex war fertig, der Namenssatz kam in seinem Zeitbudget aber nicht voran (der Prozess wurde auf einem
+// ausgelasteten Läufer kurz verdrängt). Die Antwort lautete „keine Namen, vollständig“, die Info-Spalte blendete den Abschnitt aus und fragte nie wieder.
+// Hier wird die Verdrängung erzwungen: dokumente() verbraucht das ganze Zeitbudget, bevor der Namenssatz das erste Stück verarbeiten kann.
+test("Namenssatz unter Last: der erste Abruf nach dem Start findet die Notiz trotzdem; ohne Eintrag ist die Antwort nie „vollständig“", async () => {
+  const { erzeugeSuchindex } = await import(pfad("gemeinsam", "suchindex.mjs"));
+  const d = tmp("erwh-last-");
+  schreibe(d, KAFFEE, "# Kaffee\n");
+  for (let i = 0; i < 3; i++) schreibe(d, `n/q${i}.md`, `# Q${i}\n\nHeute gab es Kaffee.\n`);
+  const ix = erzeugeSuchindex({ wurzel: d });
+  const verdraengt = (ms) => { const t = performance.now(); while (performance.now() - t < ms); };
+  const langsam = { ...ix, dokumente: (ab) => { const r = ix.dokumente(ab); verdraengt(12); return r; } };
+  const dienst = erzeugeErwaehnungen({ wurzel: d, index: () => langsam });
+  const r = await dienst.erwaehnungen(KAFFEE);
+  assert.deepEqual(r.namen, ["Kaffee"], "der Namenssatz holt vor der Antwort auf: " + JSON.stringify(r));
+  assert.equal(r.anzahlStellen, 3);
+  assert.equal(r.vollstaendig, true);
+  dienst.beende(); ix.beende();
+});
+
+test("Großer Vault direkt nach dem Start: solange der Namenssatz die Notiz noch nicht kennt, ist die Antwort nicht „vollständig“; weiteres Fragen findet sie", async () => {
+  const { erzeugeSuchindex } = await import(pfad("gemeinsam", "suchindex.mjs"));
+  const d = tmp("erwh-gross-");
+  schreibe(d, KAFFEE, "# Kaffee\n");
+  utimesSync(join(d, KAFFEE), new Date("2020-01-01"), new Date("2020-01-01")); // die älteste Notiz: der Aufbau (neueste zuerst) nimmt sie zuletzt
+  for (let i = 0; i < 700; i++) schreibe(d, `n/f${i}.md`, `# F${i}\n\n${i < 3 ? "Heute gab es Kaffee." : "Nichts."}\n`);
+  const ix = erzeugeSuchindex({ wurzel: d });
+  const verdraengt = (ms) => { const t = performance.now(); while (performance.now() - t < ms); };
+  const langsam = { ...ix, dokumente: (ab) => { const r = ix.dokumente(ab); verdraengt(12); return r; } };
+  const dienst = erzeugeErwaehnungen({ wurzel: d, index: () => langsam });
+  const r = await dienst.erwaehnungen(KAFFEE, { warteMs: 30_000 });
+  assert.equal(r.aufbau.index, true);
+  assert.deepEqual(r.namen, []);
+  assert.equal(r.aufbau.namen, false);
+  assert.equal(r.vollstaendig, false, "ohne Eintrag im Namenssatz ist nichts geprüft: " + JSON.stringify(r));
+  let n = 0, s = r;
+  while (!s.namen.length && n++ < 50) { await new Promise((ok) => setTimeout(ok, 20)); s = await dienst.erwaehnungen(KAFFEE); }
+  assert.deepEqual(s.namen, ["Kaffee"]);
+  assert.equal(s.anzahlStellen, 3);
+  dienst.beende(); ix.beende();
 });
