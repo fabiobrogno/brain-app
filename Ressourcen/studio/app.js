@@ -8,7 +8,7 @@ import { h, dialog, dialogOffen, schliesseDialoge, toast, vorMinuten, dateiName,
 import { symbol, GROESSE } from "./symbole.js";
 import { STANDARD as DARST_STANDARD, DARSTELLUNGS_SCHLUESSEL, wendeDarstellungAn, leseCache as leseDarstellungCache, schreibeCache as schreibeDarstellungCache, migriereAlteWahl } from "./darstellung.js"; // Farbschema, Akzent, Dichte, Schrift, Größe, Zeilenbreite, Symbole
 import { markiert, trefferKarte, chipLeiste, mitFilter } from "./suche.js";
-import { textfeld, textbereich, auswahl, hakenFeld, segment, knopf as baueKnopf, leerBlock, setzeLaedt, wenigBewegung } from "./bausteine.js";
+import { textfeld, textbereich, auswahl, hakenFeld, segment, knopf as baueKnopf, leerBlock, setzeLaedt, wenigBewegung, tooltip } from "./bausteine.js";
 import { liesKurzformen, faelligText } from "./kurzformen.js";
 import { kiLogo } from "./ki-logos.js";
 import { TV } from "./texte-verlauf.js";
@@ -186,7 +186,7 @@ $("knopf-frage").addEventListener("click", () => { if (S.info?.vault) frage.umsc
 // für eine richtige erste Zeichnung. S.theme (system|hell|dunkel) und S.breit (breit|voll) sind davon abgeleitet, S.modus ist das aufgelöste Hell/Dunkel.
 S.darst = { ...DARST_STANDARD, ...(leseDarstellungCache() || {}) };
 const hellDunkelSystem = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
-const letzte = { fenster: null, glas: null };
+const letzte = { fenster: null, glas: null, fliessend: null };
 // Größe der Oberfläche (zoom am body): px-Längen skalieren in jeder Engine mit dem Zoom, Prozentwerte nicht überall gleich — darum füllt der body das Fenster mit festen Maßen
 function passeFlaeche() {
   const z = parseFloat(document.documentElement.style.getPropertyValue("--ui-zoom")) || 1, st = document.documentElement.style;
@@ -204,6 +204,8 @@ function wendeDarstellung() {
   if (letzte.glas !== !!S.darst.seitenleisteDurchscheinend) { if (letzte.glas !== null) aktion("fenster-durchscheinend", !!S.darst.seitenleisteDurchscheinend); letzte.glas = !!S.darst.seitenleisteDurchscheinend; }
   if (window.__studioBereit && (davor.theme !== S.theme || davor.modus !== S.modus)) zeichneStatus();
   if (window.__studioBereit && davor.breit !== S.breit) zeichneWerkzeuge();
+  const fl = S.darst.zeilenFliessend === true;
+  if (letzte.fliessend !== fl) { const erstes = letzte.fliessend === null; letzte.fliessend = fl; if (!erstes && window.__studioBereit) ed.zeichneNeu(); } // Zeilenumbrüche: der Editor zeichnet die Absätze neu
   passeFlaeche();
   schreibeDarstellungCache(S.darst);
 }
@@ -303,6 +305,7 @@ const ed = erstelleEditor($("editor"), {
   pfad: () => S.pfad || "",
   anhaenge,
   formatLeiste: () => S.darst.formatLeiste !== false, // Einstellungen → Darstellung → Format-Leiste
+  fliessend: () => S.darst.zeilenFliessend === true, // Einstellungen → Darstellung → Zeilenumbrüche fließend
   wikiAufloesen: (ziel) => loeseWikiAuf(ziel),
   wikiFarbe: (pfad) => { const n = S.nMap.get(pfad); const typ = n?.typ ? (S.typMap.get(n.typ) || { name: n.typ }) : null; return typ ? typTextFarbe(typ) : null; },
   wikiVorschlaege: (getippt) => wikiVorschlaege(getippt),
@@ -785,13 +788,19 @@ async function konfliktNeuLaden() {
   } catch (e) { toast(e.message, { fehler: true }); }
 }
 
+// Speicherstand in der Kopfzeile: ein Symbol mit FESTER Breite (hauptfenster.css), damit nichts daneben verrutscht, wenn der Zustand wechselt. Der Text bleibt im Element
+// (für Screenreader, aria-live) und steht im Tooltip; ein Fehler fällt zusätzlich als Toast auf, weil das kleine Symbol allein leicht übersehen wird.
+let standTipp = null;
 function zeigeStand(art, still, text) {
   const e = $("speicherstand");
+  const davor = e.dataset.zustand, davorText = e.textContent;
   e.className = "speicherstand" + (art === "fehler" || art === "konflikt" ? " fehler" : "");
   e.dataset.zustand = art;
   e.textContent = art === "gespeichert" ? T.editor.gespeichert : art === "speichert" ? T.editor.speichert : art === "ungespeichert" ? T.editor.ungespeichert
     : art === "konflikt" ? T.editor.ungespeichert : art === "fehler" ? (text || T.fehler.speichern) : "";
-  if (art === "fehler") e.title = e.textContent;
+  standTipp ||= tooltip(e, "");
+  standTipp.setze(e.textContent);
+  if (art === "fehler" && (davor !== "fehler" || davorText !== e.textContent) && e.textContent !== TN.dienst.stand) toast(e.textContent, { fehler: true });
 }
 
 function zeigeBanner() {

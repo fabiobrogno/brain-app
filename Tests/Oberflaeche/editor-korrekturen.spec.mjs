@@ -2,14 +2,21 @@
 // CRLF-Dateien (W3), Prüf-Signale über Positionen (k1), Formel-/Kommentarblöcke (k6).
 // Echter Server, echter Vault (Wegwerf-Kopie), echter Editor; die View wird über das Bundle erreicht (dasselbe Modul wie die App).
 import { test, expect } from "./basis.mjs";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { tmpdir } from "node:os";
 import { baueVault } from "./vault.mjs";
 import { starteServer } from "./start.mjs";
 import { mockeV2 } from "./mocks.mjs";
 
 let vault, server, seitenfehler;
-test.beforeEach(async () => { seitenfehler = []; ({ vault } = baueVault()); server = await starteServer(vault); });
+// Diese Datei prüft das fließende Anzeigen fest umbrochener Absätze: der Schalter „Zeilenumbrüche fließend“ (Standard aus) steht in der Support-Datei an.
+test.beforeEach(async () => {
+  seitenfehler = []; ({ vault } = baueVault());
+  const support = mkdtempSync(join(tmpdir(), "brain-ui-support-"));
+  writeFileSync(join(support, "einstellungen.json"), JSON.stringify({ zeilenFliessend: true }));
+  server = await starteServer(vault, { support });
+});
 test.afterEach(() => { server?.stopp(); expect(seitenfehler, "Fehler in der Seite").toEqual([]); });
 
 const lese = (p) => readFileSync(join(vault, p)).toString("utf8");
@@ -278,10 +285,10 @@ for (const [name, text, wort, gewaehlt, danach] of [
 
 // ======================================================================= W2: Cursor am Zeilenanfang zählt als „im Absatz“
 const W2 = "# Liste\n\n- Erster Punkt, der sich über zwei Zeilen erstreckt und fest umbrochen\n  ist, damit man die Einrückung sieht.\n\n- [ ] Aufgabe mit zwei Zeilen, die ebenfalls\n  fest umbrochen ist.\n\n   Eingerückter Absatz mit drei Leerzeichen,\n   der fortgesetzt wird.\n\n1. Nummer mit zwei Zeilen, die ebenfalls\n   fest umbrochen sind.\n\nNormaler Absatz\nmit zwei Zeilen.\n";
-test("W2: Der Cursor am Zeilenanfang, vor der Listenmarke, zwischen Marke und Aufgabe oder vor der Einrückung hält den Absatz roh", async ({ page }) => {
+test("W2: Der Cursor am Zeilenanfang, vor der Listenmarke, zwischen Marke und Aufgabe oder vor der Einrückung lässt den Absatz fließen (nichts springt)", async ({ page }) => {
   schreibe("10_notizen/w2.md", W2);
   await oeffne(page, "10_notizen/w2.md");
-  // Absatz = [Zeilenanfang der ersten, Ende der letzten Zeile]; für jede Spalte vor dem Text muss der Absatz roh sein (kein verbundener Umbruch darin)
+  // Absatz = [Zeilenanfang der ersten, Ende der letzten Zeile]; für jede Spalte vor dem Text bleibt der Absatz verbunden (R4-1: kein Aufklappen beim Betreten)
   const absaetze = [["- Erster Punkt", 2], ["- [ ] Aufgabe", 6], ["   Eingerückter Absatz", 3], ["1. Nummer", 3]];
   await page.locator(".cm-line", { hasText: "Normaler Absatz" }).click({ position: { x: 24, y: 3 } }); // der Editor hat den Fokus
   for (const [anfang, textSpalte] of absaetze) {
@@ -292,28 +299,24 @@ test("W2: Der Cursor am Zeilenanfang, vor der Listenmarke, zwischen Marke und Au
     for (let spalte = 0; spalte <= textSpalte; spalte++) {
       await imEditor(page, ({ view }, p) => view.dispatch({ selection: { anchor: p } }), von + spalte);
       expect((await auswahl(page)).fokus).toBe(true);
-      expect(await verbundenIn(page, von, bis), `Cursor in Spalte ${spalte} vor „${anfang}“`).toBe(0);
+      expect(await verbundenIn(page, von, bis), `Cursor in Spalte ${spalte} vor „${anfang}“`).toBeGreaterThan(0);
     }
-    // Zum Gegenbeweis: ohne Fokus ist derselbe Absatz verbunden
-    await ohneFokus(page);
-    await expect.poll(() => verbundenIn(page, von, bis), { message: `ohne Fokus „${anfang}“` }).toBeGreaterThan(0);
     await page.locator(".cm-line", { hasText: "Normaler Absatz" }).click({ position: { x: 24, y: 3 } });
   }
 });
 
-test("W2: Home im umbrochenen Listenpunkt lässt ihn roh (der Text springt nicht)", async ({ page }) => {
+test("W2: Home im umbrochenen Listenpunkt: der Text springt nicht, er bleibt verbunden", async ({ page }) => {
   schreibe("10_notizen/w2.md", W2);
   await oeffne(page, "10_notizen/w2.md");
   const vorher = await zeilen(page);
   await page.locator(".cm-line", { hasText: "Erster Punkt" }).click({ position: { x: 200, y: 8 } });
-  const roh = await zeilen(page);
-  expect(roh).toContain("- Erster Punkt, der sich über zwei Zeilen erstreckt und fest umbrochen"); // roh: zwei Zeilen mit Marke
+  const gleich = async () => (await zeilen(page)).map((z) => z.replace(/^- /, "• ")); // nur der Punkt der Cursor-Zeile wird zum Rohzeichen
+  expect(await gleich()).toEqual(vorher); // Klick ins Innere: nichts klappt auf
   await page.keyboard.press("Home");
-  expect(await zeilen(page)).toEqual(roh);
+  expect(await gleich()).toEqual(vorher);
   expect((await auswahl(page)).fokus).toBe(true);
   await page.keyboard.press("ArrowRight");
-  expect(await zeilen(page)).toEqual(roh);
-  expect(vorher).not.toEqual(roh);
+  expect(await gleich()).toEqual(vorher);
 });
 
 // ======================================================================= W3: CRLF-Datei, eingefügter oder getippter Text
