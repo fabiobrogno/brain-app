@@ -387,9 +387,9 @@ test("K1: Klick auf eine Karte und gleich danach ⌘N: die neue Notiz bleibt off
     document.querySelector(`#liste-koerper [data-karte][data-pfad="${CSS.escape(p)}"]`).click();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "n", code: "KeyN", metaKey: true, bubbles: true, cancelable: true }));
   }, ziel);
-  await expect(page.locator("#pfad")).toHaveAttribute("title", "Neue Notiz");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "Neue Notiz");
   await page.waitForTimeout(250); // länger als die 40 ms der Liste: käme der Klick noch hinterher, wäre jetzt die Karte offen
-  await expect(page.locator("#pfad")).toHaveAttribute("title", "Neue Notiz");
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "Neue Notiz");
   await setzeText(page, "# Rennen Nachzug\n\nText aus dem Rennen.\n");
   expect((await page.evaluate(() => window.studio.vorSchliessen())).ok).toBe(true);
   await expect.poll(() => inboxDateien().includes("rennen-nachzug.md")).toBe(true);

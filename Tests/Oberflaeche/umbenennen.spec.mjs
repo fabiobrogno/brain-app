@@ -26,7 +26,7 @@ async function oeffne(page, pfad = null) {
   await page.waitForSelector("[data-karte]");
   // Die Notiz aus ?pfad= öffnet das Studio erst nach den Karten; dabei klappt es ihre Ordner im Baum auf (im selben Schritt wie der Pfad oben).
   // Ohne dieses Warten sah klappeAuf() den Ordner noch zu, und sein Klick traf die schon aufgeklappte Zeile und klappte sie wieder zu (CI-Wackler).
-  if (pfad) await expect(page.locator("#pfad")).toHaveAttribute("title", pfad);
+  if (pfad) await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", pfad);
 }
 const karte = (page, pfad) => page.locator(`[data-karte][data-pfad="${pfad}"]`);
 const zeile = (page, pfad) => page.locator(`#baum .zeile[data-pfad="${pfad}"]`);
