@@ -57,8 +57,9 @@
 .seite-skelett { display: grid; gap: 4px; padding: 2px 0; }
 .seite-skelett .bs-skelett { height: 30px; border-radius: var(--r); }
 
-/* ---------- Lange Listen: nicht Sichtbares wird nicht gezeichnet (5.000 Notizen scrollen flüssig); die Höhe merkt sich der Browser ---------- */
-.liste-koerper > .karte { content-visibility: auto; contain-intrinsic-size: auto 96px; }
+/* ---------- Lange Listen: nur Sichtbares steht im DOM (liste-virtuell.js, R4-5); die Platzhalter tragen die Höhe der übrigen Karten.
+   Kein content-visibility mehr: die gezeichneten Karten werden gemessen und müssen ihre echte Höhe haben. ---------- */
+.v-platz { display: block; margin: 0; padding: 0; border: 0; pointer-events: none; }
 
 /* ---------- Scrollkanten: der Inhalt läuft zur Kante hin aus, wo es weitergeht (bewegung.js: kantenInstallieren) ---------- */
 [data-kanten] { --kante: 18px; }

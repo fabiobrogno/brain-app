@@ -122,12 +122,12 @@ export const api = {
   // „KI verbinden“, Prüfen: ein echter, rein lesender Aufruf über den Kortex-MCP-Server als dieses Konto (kein Modellaufruf) → { ok, vault, werkzeuge, konto }; 409 kein-zugriff, wenn das Konto den Vault nicht sehen darf
   mcpPruefen: ({ konto, programm } = {}) => anfrage("POST", "/api/mcp/pruefen", { ...(konto ? { konto } : {}), ...(programm ? { programm } : {}) }),
   // ---- v2: Index, Typen, Ansichten, Kontext, Verlauf des Repos
-  notizen: () => anfrage("GET", "/api/notizen"),
+  notizen: () => anfrage("GET", "/api/notizen?kompakt=1"), // kompakt: ohne links, Vorschau gekürzt (R4-5)
   notizKontext: (pfad) => anfrage("GET", "/api/notiz/kontext" + q({ pfad })),
   typen: () => anfrage("GET", "/api/typen"),
   ansichten: () => anfrage("GET", "/api/ansichten"),
-  indexAlles: () => anfrage("GET", "/api/index"),
-  teilIndex: (pfade) => anfrage("POST", "/api/teilindex", { pfade }),
+  indexAlles: () => anfrage("GET", "/api/index?kompakt=1"),
+  teilIndex: (pfade) => anfrage("POST", "/api/teilindex", { pfade, kompakt: true }),
   gitLog: ({ max, vor } = {}) => anfrage("GET", "/api/git/log" + q({ max, vor })),
   gitRemote: (url) => anfrage("POST", "/api/git/remote", { url }),
   // ---- v3: Abgleich mit Konflikten, Nachsehen, Version zurückholen

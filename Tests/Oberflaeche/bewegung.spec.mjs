@@ -212,7 +212,7 @@ test("CLS beim langsamen Laden: Skelett hält den Platz, Liste und Seitenleiste 
   let frei;
   const tor = new Promise((r) => { frei = r; });
   await page.route("**/api/baum", async (route) => { await tor; await route.continue(); });
-  await page.route("**/api/notizen", async (route) => { await tor; await route.continue(); });
+  await page.route(/\/api\/notizen(\?.*)?$/, async (route) => { await tor; await route.continue(); });
   await page.addInitScript(() => {
     window.__cls = 0;
     new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__cls += e.value; }).observe({ type: "layout-shift", buffered: true });

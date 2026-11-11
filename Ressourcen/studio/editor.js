@@ -9,6 +9,7 @@ import { istAnhangName } from "./anhang-regeln.js";
 import { tabellenErweiterung, fuegeTabelleEin, zelleUmschalten } from "./tabellen.js"; // Runde 3b: Tabellen, Formatieren, Einfügen, Format-Leiste (eigene Module)
 import * as FM from "./formatieren.js";
 import { formatLeiste } from "./format-leiste.js";
+import { langeAbsaetze } from "./editor-lange-absaetze.js"; // R4-5: Riesen-Absätze ohne quadratisches Link-Parsen
 import { schraegstrichMenue } from "./schraegstrich.js"; // „/“ öffnet das Einfüge-Menü an der Schreibmarke
 
 const { EditorState, EditorSelection, EditorView, Decoration, ViewPlugin, WidgetType, StateField, StateEffect, GutterMarker, MapMode, gutter, keymap } = CM;
@@ -609,7 +610,7 @@ export function erstelleEditor(eltern, ctx) {
     CM.drawSelection(),
     CM.highlightSelectionMatches(),
     CM.search({ top: true }),
-    CM.markdown({ base: CM.markdownLanguage }),
+    CM.markdown({ base: CM.markdownLanguage, extensions: [langeAbsaetze] }),
     EditorView.lineWrapping,
     zeilenendeEinfuegen,
     zeilenendeEingabe,
