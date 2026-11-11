@@ -31,7 +31,7 @@ async function start(page, { hash = "", breite = 1440, hoehe = 900, dunkel = fal
   if (dunkel) await page.emulateMedia({ colorScheme: "dark" });
   await page.goto(server.url + hash);
   await page.waitForSelector("#app:not([hidden])");
-  await expect(page.locator("#vault-name")).toBeVisible();
+  await expect(page.locator("#kopf-suche")).toBeVisible(); // die Seitenleiste ist unter 960 px eingeklappt (R4-7), die Kopfzeile steht immer
   await page.waitForFunction(() => window.__studioBereit === true);
 }
 const oeffne = async (page, bereich = "allgemein") => {

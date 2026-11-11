@@ -24,7 +24,7 @@ export const T = {
   bereiche: { inbox: "Posteingang", aufgaben: "Aufgaben", rueckfragen: "Rückfragen", alle: "Alle Notizen", wissen: "Wissen", archiv: "Archiv", vorlagen: "Vorlagen", papierkorb: "Papierkorb" },
   abschnitte: { favoriten: "Favoriten", ansichten: "Ansichten", typen: "Typen", ordner: "Ordner", sichten: "Sichten" },
   // Hauptfenster (P3): Kopfzeile, KI-Zeile unten in der Seitenleiste, Zähler der Statusleiste
-  kopf: { suche: "Suchen oder Befehl …", sucheTitel: "Suchen oder Befehl ausführen", verlauf: "Verlauf", seiteAus: "Seitenleiste ausblenden", seiteEin: "Seitenleiste einblenden" },
+  kopf: { suche: "Suchen oder Befehl …", sucheTitel: "Suchen oder Befehl ausführen", verlauf: "Verlauf", seiteAus: "Seitenleiste ausblenden", seiteEin: "Seitenleiste einblenden", notizen: "Notizen", mehr: "Weitere Aktionen" },
   frageZeile: "Frag deinen Vault",
   kiZeile: {
     keine: "KI verbinden", keineTitel: "Kortex hat auf diesem Mac keine KI erkannt. Klicke, um eine zu verbinden.",

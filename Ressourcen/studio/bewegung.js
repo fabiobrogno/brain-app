@@ -139,6 +139,12 @@ function kantenAn(el) {
   let wartet = false;
   const lauf = () => {
     wartet = false;
+    if (el.hasAttribute("data-kanten-x")) { // waagerecht (Aufgaben-Board in schmalen Fenstern, R4-7): data-kante-x="links|rechts|beide"
+      const li = el.scrollLeft > 2, re = el.scrollWidth - el.scrollLeft - el.clientWidth > 2;
+      const x = li && re ? "beide" : li ? "links" : re ? "rechts" : "";
+      if (x) { if (el.dataset.kanteX !== x) el.dataset.kanteX = x; } else if (el.dataset.kanteX) delete el.dataset.kanteX;
+    }
+    if (!el.hasAttribute("data-kanten")) return;
     const oben = el.scrollTop > 2, unten = el.scrollHeight - el.scrollTop - el.clientHeight > 2;
     const w = oben && unten ? "beide" : oben ? "oben" : unten ? "unten" : "";
     if (w) { if (el.dataset.kante !== w) el.dataset.kante = w; } else if (el.dataset.kante) delete el.dataset.kante;
@@ -150,7 +156,7 @@ function kantenAn(el) {
   plane();
 }
 export function kantenInstallieren() {
-  const suche = () => document.querySelectorAll("[data-kanten]").forEach(kantenAn);
+  const suche = () => document.querySelectorAll("[data-kanten], [data-kanten-x]").forEach(kantenAn);
   suche();
   let t = 0;
   new MutationObserver(() => { if (!t) t = setTimeout(() => { t = 0; suche(); }, 120); }).observe(document.body, { childList: true, subtree: true });

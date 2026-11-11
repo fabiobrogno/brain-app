@@ -222,3 +222,22 @@ test("⌘Z wirkt nicht hinter offenen Menüs und Einstellungen", async ({ page }
   await page.keyboard.press("Meta+z");
   await expect.poll(() => da("30_ablage/Zweites.md")).toBe(true);
 });
+
+test("Schmales Fenster: ⌘Z wirkt nicht hinter der Seitenleiste als Überlagerung (R4-7)", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await oeffne(page, "30_ablage/Einzelnes.md");
+  await karte(page, "30_ablage/Zweites.md").click();
+  await expect(page.locator("#pfad")).toHaveAttribute("data-tipp-text", "30_ablage/Zweites.md");
+  await page.locator("#liste-koerper").focus();
+  await page.keyboard.press("Meta+Backspace");
+  await expect.poll(() => da("30_ablage/Zweites.md")).toBe(false);
+  await page.keyboard.press("Control+Meta+s");
+  await expect(page.locator("#seite")).toBeVisible();
+  await page.keyboard.press("Meta+z");
+  await page.waitForTimeout(500);
+  expect(da("30_ablage/Zweites.md")).toBe(false);
+  await page.keyboard.press("Escape");
+  await ohneFokus(page);
+  await page.keyboard.press("Meta+z");
+  await expect.poll(() => da("30_ablage/Zweites.md")).toBe(true);
+});

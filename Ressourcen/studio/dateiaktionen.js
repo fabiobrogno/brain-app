@@ -591,6 +591,8 @@ export function erzeugeDateiaktionen(ctx) {
     if (menueOffen() || popoverOffen()) return true;
     if (document.querySelector('.menue.offen, [role="menu"], [aria-modal="true"], [role="dialog"], [data-ki-text], #einstellungen-host:not([hidden])')) return true;
     if (document.getElementById("app")?.dataset.modus === "konflikt") return true;
+    // schmale Fenster (R4-7): Seitenleiste und Eigenschaften als Überlagerung
+    if (S.seiteSchwebt || (S.infoAn && S.infoEng && S.infoErzwungen)) return true;
     if (!a || a === document.body || a === document.documentElement) return false;
     return !a.closest("#seite, #liste, #haupt, #info");
   }

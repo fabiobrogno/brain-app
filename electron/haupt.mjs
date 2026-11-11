@@ -379,7 +379,7 @@ function zeigeFehlerSeite(text) {
 
 function oeffneFenster() {
   fenster = new BrowserWindow({
-    width: 1280, height: 860, minWidth: 720, minHeight: 480, show: false, title: "Kortex",
+    width: 1280, height: 860, minWidth: 720, minHeight: 520, show: false, title: "Kortex",
     ...(bildVon(aktuellesSymbol, "fenster") ? { icon: bildVon(aktuellesSymbol, "fenster") } : {}),
     // Fenstermaterial (Windows 11): die Seite ist dann an der Seitenleiste durchsichtig (data-glas), sonst deckend
     ...(GLAS && process.platform === "win32" ? { backgroundMaterial: glasWunsch ? "mica" : "none" } : {}),

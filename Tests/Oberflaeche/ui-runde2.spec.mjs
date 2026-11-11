@@ -32,6 +32,12 @@ async function start(page, breite, hoehe = 800) {
   await page.waitForSelector("[data-karte], [data-leer]", { timeout: 10000 });
 }
 
+// Unter 960 px ist die Seitenleiste eingeklappt (R4-7): für den Klick auf einen Bereich erst als Überlagerung öffnen (sie schließt sich mit dem Klick wieder)
+async function klickeBereich(page, id) {
+  if ((await page.locator("#app").getAttribute("data-seite")) !== "an") { await page.keyboard.press("Control+Meta+s"); await expect(page.locator("#app")).toHaveAttribute("data-seite", "schwebt"); }
+  await page.click(`[data-bereich="${id}"]`);
+}
+
 // Alle sichtbaren Bedienelemente und Überschriften: liegen sie im Fenster und werden sie von keinem waagerecht abschneidenden Vorfahren gekappt?
 // (Das Board darf seine Spalten waagerecht scrollen: .au-brett ist die einzige erlaubte Ausnahme.)
 async function abgeschnitten(page) {
@@ -60,7 +66,7 @@ for (const breite of BREITEN) {
   test.describe(`Breite ${breite}px`, () => {
     test("Aufgaben-Board: Kopfzeile, Filter und Statusleiste ragen nirgends heraus", async ({ page }) => {
       await start(page, breite);
-      await page.click('[data-bereich="aufgaben"]');
+      await klickeBereich(page, "aufgaben");
       await expect(page.locator('[data-ansicht="aufgaben"]')).toBeVisible();
       await expect(page.locator("[data-karte-aufgabe]").first()).toBeVisible();
       expect(await abgeschnitten(page)).toEqual([]);
@@ -84,7 +90,7 @@ for (const breite of BREITEN) {
     test("Notizen und Posteingang: Listenkopf, Werkzeugleiste, Seitenleiste und Statusleiste im Fenster", async ({ page }) => {
       await start(page, breite);
       for (const bereich of ["alle", "inbox"]) {
-        await page.click(`[data-bereich="${bereich}"]`);
+        await klickeBereich(page, bereich);
         await page.locator("#liste-koerper [data-karte]").first().click();
         await page.waitForTimeout(250);
         expect(await abgeschnitten(page), bereich).toEqual([]);
@@ -110,7 +116,7 @@ test("Popover-Kollision: Menüs am Rand und in niedrigen Fenstern liegen vollst�
 
   // Auswahl-Chip ganz rechts im Board + sehr schmales Fenster: Liste klappt nach links/oben, nie über den Rand
   await page.setViewportSize({ width: 1400, height: 800 });
-  await page.click('[data-bereich="aufgaben"]');
+  await klickeBereich(page, "aufgaben");
   await expect(page.locator('[data-filter="faellig"]')).toBeVisible();
   await page.setViewportSize({ width: 560, height: 360 });
   await page.click("[data-filter-knopf]");
@@ -168,7 +174,7 @@ test("Statusleiste behält den Tastaturfokus beim Neuzeichnen", async ({ page })
 
 test("Leere Zustände: freundlicher Text und eine Aktion (Suche ohne Treffer, Ansicht ohne Notizen)", async ({ page }) => {
   await start(page, 1400);
-  await page.click('[data-bereich="alle"]');
+  await klickeBereich(page, "alle");
   await page.click("#knopf-suche");
   await page.fill("#suche", "zzzqqqxxx");
   await expect(page.locator('[data-suche="leer"]')).toBeVisible();
@@ -176,7 +182,7 @@ test("Leere Zustände: freundlicher Text und eine Aktion (Suche ohne Treffer, An
   await expect(page.locator("#suche")).toHaveValue("");
   await expect(page.locator("#suche")).toBeFocused();
   await page.keyboard.press("Escape");
-  await page.click('[data-bereich="archiv"]');
+  await klickeBereich(page, "archiv");
   await expect(page.locator('[data-leer="liste"]')).toBeVisible();
   await page.click('[data-aktion="alle-notizen"]');
   await expect(page.locator("#liste-koerper [data-karte]").first()).toBeVisible();
@@ -187,7 +193,7 @@ test("Ansichtswechsel blendet in höchstens 200 ms (--d-2) ein und beachtet „B
   const dauer = await page.evaluate(() => { const a = document.createElement("div"); a.className = "ansicht-wechsel"; a.innerHTML = '<div id="liste-koerper"></div>'; document.body.append(a); const d = getComputedStyle(a.firstChild).animationDuration; a.remove(); return d; });
   expect(parseFloat(dauer) * (dauer.endsWith("ms") ? 1 : 1000)).toBeLessThanOrEqual(200);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.click('[data-bereich="aufgaben"]');
+  await klickeBereich(page, "aufgaben");
   await expect(page.locator("#app")).not.toHaveClass(/ansicht-wechsel/);
 });
 
