@@ -1,9 +1,9 @@
 // R4-5: schlanke Listen-Antwort der Werkstatt (?kompakt=1): ohne `links`, Vorschau gekürzt, sonst gleich; ohne den Schalter bleibt der Vertrag unverändert.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { writeFileSync, utimesSync } from "node:fs";
 import { join } from "node:path";
-import { tmp, pfad } from "./hilfe.mjs";
+import { tmp, schreibe, pfad } from "./hilfe.mjs";
 
 process.env.HOME = tmp("brain-home-"); if (process.platform === "win32") process.env.USERPROFILE = process.env.HOME;
 const { erzeugeHandler, kompakt, VORSCHAU_KOMPAKT } = await import(pfad("werkstatt", "handler.mjs"));
@@ -25,8 +25,8 @@ test("kompakt(): entfernt links, kürzt die Vorschau (nie mitten in ein Ersatzze
   assert.equal(kompakt(null), null); assert.deepEqual(kompakt({ a: 1 }), { a: 1 });
 });
 
-test("/api/index, /api/notizen, /api/teilindex mit kompakt: gleiche Notizen und Felder, aber ohne links und kleiner; ohne Schalter wie bisher", async () => {
-  const { vault, dateien } = baueGrossVault(400, { start: 7 });
+test("/api/index und /api/notizen mit kompakt: gleiche Notizen und Felder, aber ohne links und kleiner; ohne Schalter wie bisher", async () => {
+  const { vault } = baueGrossVault(400, { start: 7 });
   const rufe = aufruf(erzeugeHandler({ vault }));
   const voll = await rufe("GET", "/api/index");
   const k = await rufe("GET", "/api/index", undefined, "kompakt=1");
@@ -37,19 +37,34 @@ test("/api/index, /api/notizen, /api/teilindex mit kompakt: gleiche Notizen und 
   for (const [i, n] of k.j.notizen.entries()) {
     const v = voll.j.notizen[i];
     assert.equal("links" in n, false);
-    assert.ok(n.vorschau.length <= VORSCHAU_KOMPAKT && v.vorschau.startsWith(n.vorschau));
+    assert.ok(n.vorschau.length <= VORSCHAU_KOMPAKT && (v.vorschau === n.vorschau || (n.vorschau.endsWith("…") && v.vorschau.startsWith(n.vorschau.slice(0, -1)))));
     const { links, vorschau, ...rest } = v; const { vorschau: _v, ...rest2 } = n;
     assert.deepEqual(rest2, rest, "alle übrigen Felder gleich");
   }
   assert.ok(k.bytes < voll.bytes * 0.95, `kompakt ${k.bytes} B gegen voll ${voll.bytes} B`);
   const n1 = await rufe("GET", "/api/notizen", undefined, "kompakt=1");
   assert.deepEqual(n1.j.notizen, k.j.notizen);
-  // Teil-Index nach einer Änderung
-  writeFileSync(join(vault, dateien[3]), "# Neu\n\nGeändert, mit [[Anderes]] und einem langen Text. ".repeat(20));
-  const t = await rufe("POST", "/api/teilindex", { pfade: [dateien[3]], kompakt: true });
-  if (t.j.voll) return; // Vault ohne Posteingang: die Werkstatt verlangt das volle Neuladen, dann gibt es keine Zeilen zu prüfen
-  assert.ok(t.j.notizen.length >= 1);
-  assert.ok(t.j.notizen.every((n) => !("links" in n) && n.vorschau.length <= VORSCHAU_KOMPAKT)); // auch wenn die Werkstatt „voll“ meldet
-  const t2 = await rufe("POST", "/api/teilindex", { pfade: [dateien[3]] });
-  assert.ok(t2.j.notizen.every((n) => Array.isArray(n.links)));
+});
+
+test("/api/teilindex mit kompakt liefert echte Zeilen (kein „voll“): ohne links, Vorschau gekürzt mit „…“ an einer Wortgrenze; ohne Schalter mit links", async () => {
+  const d = tmp();
+  schreibe(d, "00_inbox/lose.md", "# Lose\n\nEine lose Idee.\n");
+  schreibe(d, "projekte/a.md", "# A\n\nText zu A. [[b]]\n");
+  schreibe(d, "projekte/b.md", "# B\n\nVerweist auf [[a]].\n");
+  for (const r of ["00_inbox/lose.md", "projekte/a.md", "projekte/b.md"]) { const t = new Date(Date.now() - 3600 * 1000); utimesSync(join(d, r), t, t); }
+  const rufe = aufruf(erzeugeHandler({ vault: d }));
+  await rufe("GET", "/api/index", undefined, "kompakt=1"); // Vollauf zuerst, sonst verlangt die Werkstatt „voll“
+  const lang = Array.from({ length: 80 }, (_, i) => `wort${i}`).join(" ");
+  writeFileSync(join(d, "projekte/a.md"), `# A\n\n${lang} [[b]]\n`);
+  const t = await rufe("POST", "/api/teilindex", { pfade: ["projekte/a.md"], kompakt: true });
+  assert.equal(t.j.voll, false);
+  assert.equal(t.j.notizen.length, 1);
+  const n = t.j.notizen[0];
+  assert.equal("links" in n, false);
+  assert.ok(n.vorschau.length <= VORSCHAU_KOMPAKT && n.vorschau.endsWith("…"));
+  assert.match(n.vorschau, /wort\d+…$/, "endet an einer Wortgrenze, nicht mitten im Wort");
+  writeFileSync(join(d, "projekte/a.md"), `# A\n\n${lang} [[b]] zwei\n`);
+  const t2 = await rufe("POST", "/api/teilindex", { pfade: ["projekte/a.md"] });
+  assert.equal(t2.j.voll, false);
+  assert.deepEqual(t2.j.notizen[0].links, ["projekte/b.md"]);
 });

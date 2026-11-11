@@ -12,7 +12,8 @@ export const langeAbsaetze = {
   parseBlock: [{
     name: "AbsatzSchnitt",
     parse: () => false, // beginnt nie selbst einen Block; nur die Grenze unten wirkt
-    endLeaf: (cx, line, leaf) => leaf.content.length > ABSATZ_SCHNITT,
+    // Nur echte Absätze: Tabellen (Leaf-Parser mit `rows`) und Link-Definitionen (`elts`) sind ebenfalls Leaf-Blöcke und dürfen nie zerschnitten werden (tabellen.js liest die ganze Tabelle)
+    endLeaf: (cx, line, leaf) => leaf.content.length > ABSATZ_SCHNITT && !leaf.parsers.some((p) => p && (Array.isArray(p.rows) || Array.isArray(p.elts))),
   }],
   parseInline: [{
     name: "LangerAbsatz",

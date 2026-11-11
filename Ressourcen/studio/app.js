@@ -409,6 +409,7 @@ async function legeWikiZielAn(ziel) {
 // zeile (+ spalte, laenge, begriffe): Sprung an die Fundstelle aus der Suche; die gesuchten Wörter werden im Text markiert (editor.js springeZu)
 async function oeffne(pfad, { zeile, spalte, laenge, begriffe, ausListe, ausBoard, verlauf: ausVerlauf = false, zustand = null, beiFehlt = null } = {}) {
   const fund = begriffe || laenge ? { spalte, laenge, begriffe } : undefined;
+  if (!ausListe) listenZiel = null; // anderer Weg (Baum, Palette, Link): das Ziel der Pfeiltasten gilt nicht mehr
   if (konfliktInst) { if (konfliktInst.laeuft()) return false; await schliesseKonflikt(konfliktInst.istFertig() ? "fertig" : "liste"); }
   if (pfad === S.pfad) { schliesseDiff(); if (zeile) ed.springeZu(zeile, fund); else if (!ausListe) ed.fokus(); return true; }
   if (S.konflikt) { toast(`Löse zuerst den Konflikt in „${ohneEndung(dateiName(S.pfad))}“.`, { fehler: true }); return false; }
@@ -1391,7 +1392,7 @@ function zeichneListe({ behalte = false } = {}) {
   if (leiste) host.append(leiste);
   if (S.sicht.art === "bereich" && S.sicht.id === "inbox") { host.append(neuKarte.knoten); neuKarte.lade(); host.append(pkKi.leiste); pkKi.laden(); } // „Was ist neu“ ganz oben im Posteingang, darunter die Leiste „Für alle“
   if (!S.sichtListe.length) { pkKi.aktualisiere(); host.append(S.zeigeZurueckgestellt ? h("div", { klasse: "leer-liste", "data-leer": "zurueckgestellt" }, h("p", { text: T.posteingang.leerZurueckgestellt })) : leerZustand()); return; }
-  virt.setze({ anzahl: S.sichtListe.length, schluessel: (i) => S.sichtListe[i].pfad, baue: (i) => baueKarte(S.sichtListe[i]), scroll });
+  virt.setze({ anzahl: S.sichtListe.length, schluessel: (i) => S.sichtListe[i].pfad, baue: (i) => baueKarte(S.sichtListe[i]), scroll, beiFokusVerlust: () => { if (da.bearbeitet()) da.bricheInlineAb(); } });
   if (alt) listenUebergang(host, alt, vorherAlle);
   if (S.sicht.art === "bereich" && S.sicht.id === "inbox") pkKi.aktualisiere();
 }

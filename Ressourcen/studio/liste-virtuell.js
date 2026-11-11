@@ -48,7 +48,15 @@ export function erzeugeVirtuelleListe({ host }) {
   }
   function entferne(i) { const k = el.get(i); if (!k) return; ro.unobserve(k); k.remove(); el.delete(i); }
   // Der Eintrag mit dem Fokus (z. B. eine Umbenennung an Ort und Stelle) bleibt gezeichnet, solange er nicht weit weg ist
-  const fokusIndex = () => { const f = document.activeElement; if (!f || f === document.body || !host.contains(f)) return -1; for (const [i, k] of el) if (k.contains(f)) return i; return -1; };
+  // Ebenso die Karte, die gerade gezogen wird (Ziehen und Ablegen läuft, Auto-Scroll darf sie nicht entfernen)
+  const fokusIndex = () => { const f = document.activeElement; for (const [i, k] of el) if (k.classList.contains("zieht") || (f && f !== document.body && k.contains(f))) return i; return -1; };
+  let beiFokusVerlust = null;
+  // Muss die Karte mit dem Fokus doch weg (weit weggescrollt): erst eine offene Umbenennung sauber beenden, dann den Fokus auf die Liste legen (Pfeiltasten bleiben nutzbar)
+  function gibFokusFrei(k) {
+    if (!k.contains(document.activeElement)) return;
+    try { beiFokusVerlust?.(k); } catch { /* egal */ }
+    if (k.contains(document.activeElement) || document.activeElement === document.body) host.focus({ preventScroll: true });
+  }
 
   // Ankerkorrektur: der oberste sichtbare Eintrag bleibt an seiner Stelle, auch wenn davor Höhen ersetzt werden
   function anker() {
@@ -87,8 +95,8 @@ export function erzeugeVirtuelleListe({ host }) {
   function zeichne(von, bis) {
     const an = el.size ? anker() : null;
     const f = fokusIndex();
-    if (f >= 0 && Math.abs(f - von) < 150 && Math.abs(f - bis) < 150) { von = Math.min(von, f); bis = Math.max(bis, f + 1); }
-    for (const i of [...el.keys()]) if (i < von || i >= bis) entferne(i);
+    if (f >= 0 && Math.abs(f - von) < 150 && Math.abs(f - bis) < 150 && f >= 0) { von = Math.min(von, f); bis = Math.max(bis, f + 1); }
+    for (const i of [...el.keys()]) if (i < von || i >= bis) { if (i === f) gibFokusFrei(el.get(i)); entferne(i); }
     const erst = el.size ? Math.min(...el.keys()) : null;
     const vorn = document.createDocumentFragment(), hinten = document.createDocumentFragment();
     for (let i = von; i < bis; i++) {
@@ -139,7 +147,7 @@ export function erzeugeVirtuelleListe({ host }) {
   // Neue Liste: anzahl Einträge, schluessel(i) = stabile Kennung (Pfad), baue(i) = Element. Der Host enthält davor schon beliebige Kinder.
   function setze(o) {
     stoppeIntern();
-    n = o.anzahl; schluesselVon = o.schluessel; baue = o.baue; laeuft = true; schmutzig = true;
+    n = o.anzahl; schluesselVon = o.schluessel; baue = o.baue; beiFokusVerlust = o.beiFokusVerlust || null; laeuft = true; schmutzig = true;
     host.append(oben, unten);
     a = b = 0;
     rechne();

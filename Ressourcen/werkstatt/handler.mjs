@@ -71,7 +71,13 @@ export const findeClaude = (env = process.env) => findeProgramm("claude", env);
 export const VORSCHAU_KOMPAKT = 160;
 export function kompakt(r) {
   if (!r || !Array.isArray(r.notizen)) return r;
-  const kurz = (s) => { if (typeof s !== "string" || s.length <= VORSCHAU_KOMPAKT) return s; const c = s.charCodeAt(VORSCHAU_KOMPAKT - 1); return s.slice(0, c >= 0xd800 && c < 0xdc00 ? VORSCHAU_KOMPAKT - 1 : VORSCHAU_KOMPAKT); };
+  // wie notizen.mjs `kuerze`: an der letzten Leerstelle (wenn sie nicht zu weit vorn liegt) schneiden, „…“ anhängen; nie mitten in ein Ersatzzeichenpaar
+  const kurz = (s) => {
+    if (typeof s !== "string" || s.length <= VORSCHAU_KOMPAKT) return s;
+    let schnitt = VORSCHAU_KOMPAKT - 1; const c = s.charCodeAt(schnitt - 1); if (c >= 0xd800 && c < 0xdc00) schnitt--;
+    const k = s.slice(0, schnitt), l = k.lastIndexOf(" ");
+    return (l > schnitt * 0.6 ? k.slice(0, l) : k).replace(/[\s,;:.\-–—]+$/, "") + "…";
+  };
   return { ...r, notizen: r.notizen.map(({ links, vorschau, ...rest }) => ({ ...rest, vorschau: kurz(vorschau) })) };
 }
 

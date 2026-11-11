@@ -217,3 +217,40 @@ test("Riesen-Absatz (487 KB ohne Leerzeile): Öffnen und Tippen bleiben flüssig
   if (laenge !== null) expect(laenge).toBeGreaterThan(487000);
   await bild(page, "r45-riese");
 });
+
+test("Umbenennen an Ort und Stelle: wird die Karte weit weggescrollt, endet die Umbenennung sauber, der Fokus liegt auf der Liste und die Pfeiltasten gehen weiter", async ({ page }) => {
+  await oeffneStudio(page);
+  await scrolle(page, 20000);
+  await page.waitForTimeout(500);
+  const k = page.locator("#liste-koerper [data-karte]").nth(8);
+  await k.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await k.click({ button: "right" });
+  await page.waitForSelector(".menue.offen", { timeout: 5000 });
+  await page.locator('.menue.offen .m-eintrag[data-menue="umbenennen"]').click();
+  const feld = page.locator(".inline-name");
+  await expect(feld).toBeFocused();
+  await scrolle(page, 150000); // mehr als 150 Karten entfernt: die Karte wird entfernt
+  await expect(page.locator(".inline-name")).toHaveCount(0);
+  expect(await page.evaluate(() => document.activeElement?.id)).toBe("liste-koerper");
+  await page.keyboard.press("Home");
+  await expect.poll(() => ausgewaehlt(page), { timeout: 10000 }).toBe(1);
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(() => ausgewaehlt(page)).toBe(2);
+});
+
+test("Pfeiltasten rechnen nach dem Öffnen auf anderem Weg (Palette) von der geöffneten Notiz, nicht vom alten Ziel", async ({ page }) => {
+  await oeffneStudio(page);
+  await page.locator("#liste-koerper [data-karte]").first().click();
+  await expect.poll(() => ausgewaehlt(page)).toBe(1);
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Meta+k");
+  await page.keyboard.type(titelVon(N - 3));
+  await page.waitForTimeout(700);
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => { const p = await ausgewaehlt(page); return p !== null && p > 10; }, { timeout: 10000 }).toBe(true);
+  const p = await ausgewaehlt(page);
+  await liste(page).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(() => ausgewaehlt(page)).toBe(p + 1);
+});
