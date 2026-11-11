@@ -134,7 +134,7 @@ test("Menü: Kürzel kommen aus Register und eigener Belegung — Strg statt ⌘
   assert.equal(nach("befehl-palette").accelerator, "Ctrl+K");
   assert.equal(nach("befehl-heute").accelerator, "Ctrl+Shift+D");
   assert.equal(nach("befehl-zurueck").accelerator, "Ctrl+Alt+Left");
-  assert.equal(nach("befehl-hell-dunkel").accelerator, undefined, "ohne Kürzel im Register: keines im Menü");
+  assert.equal(nach("befehl-hell-dunkel").accelerator, "Ctrl+Alt+L", "Hell/Dunkel hat seit R4-3 ein Standardkürzel (⌥⌘L)");
   assert.equal(nach("befehl-neu").registerAccelerator, false, "Windows/Linux: nur anzeigen, das Studio fängt den Tastendruck selbst ab");
   // feste Einträge: Kürzel aus den „reservierten“ des Registers
   assert.equal(nach("fest-beenden").accelerator, "Ctrl+Q");
@@ -169,7 +169,7 @@ test("Menü: Klick meldet den Befehl bzw. die feste Aktion; menueAccelerator ohn
   e.find((x) => x.id === "fest-beenden").click();
   e.find((x) => x.id === "fest-erfassen").click();
   assert.deepEqual(klicks, [{ befehl: "vault-wechseln" }, { fest: "beenden" }, { fest: "erfassen" }]);
-  assert.equal(menueAccelerator("hell-dunkel", { register, logik, belegung: belegungStandard(), gewinner: logik.nachschlagen(register, {}), plattform: "linux" }), null);
+  assert.equal(menueAccelerator("vault-wechseln", { register, logik, belegung: belegungStandard(), gewinner: logik.nachschlagen(register, {}), plattform: "linux" }), null);
 });
 
 // ───────────── Tray ─────────────

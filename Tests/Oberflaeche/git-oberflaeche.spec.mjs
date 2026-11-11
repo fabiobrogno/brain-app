@@ -228,7 +228,7 @@ test.describe("Statusleiste: Hauptknopf „Abgleichen“", () => {
     await page.reload(); await page.waitForSelector('[data-st="sync"]');
     await expect(sync(page)).toHaveAttribute("data-zustand", "senden");
     await expect(sync(page)).toContainText("3 zu senden");
-    await expect(sync(page)).toHaveAttribute("title", /3 gesicherte Fassungen warten/);
+    await expect(sync(page)).toHaveAttribute("data-tipp-text", /3 gesicherte Fassungen warten/);
     await expect(page.locator('[data-st="hochladen"]')).toHaveCount(0);
     // Neues da hat Vorrang vor „zu senden“
     await page.unroute("**/api/git/status"); await page.unroute("**/api/git/nachsehen");
@@ -271,7 +271,7 @@ test.describe("Statusleiste: Hauptknopf „Abgleichen“", () => {
     await oeffneApp(page, BASIS(), { nachsehen: "fehler" });
     await expect(sync(page)).toHaveAttribute("data-zustand", "offline");
     await expect(sync(page)).toContainText("Offline");
-    await expect(sync(page)).toHaveAttribute("title", /bleibt auf diesem Mac/);
+    await expect(sync(page)).toHaveAttribute("data-tipp-text", /bleibt auf diesem Mac/);
     // Server wieder da: der Browser meldet „online“, das Nachsehen klappt
     await page.unroute("**/api/git/nachsehen");
     await page.route("**/api/git/nachsehen", (r) => r.fulfill({ json: BASIS() }));

@@ -10,7 +10,7 @@
 .dz-karte { position: relative; display: block; text-align: left; border-radius: 11px; padding: 6px 6px 8px; border: 1px solid var(--linie); background: var(--papier); color: var(--text); cursor: pointer; transition: border-color var(--d-2), box-shadow var(--d-2); font: inherit; }
 .dz-karte:hover { border-color: var(--linie-stark); }
 .dz-karte[aria-checked="true"] { border-color: var(--akzent); box-shadow: 0 0 0 3px var(--akzent-weich); }
-.dz-karte:focus-visible, .dz-farbe:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.dz-karte:focus-visible, .dz-farbe:focus-visible { outline: 0; box-shadow: var(--fokus-ring); }
 .dz-bild { display: block; }
 .dz-name { display: flex; align-items: center; gap: 6px; padding: 7px 3px 0; font-weight: 500; font-size: 12.5px; }
 .dz-haken { margin-left: auto; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--eingabe); display: grid; place-items: center; color: var(--akzent-text); transition: background-color var(--d-2), border-color var(--d-2); }
