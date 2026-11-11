@@ -63,6 +63,21 @@ test("Info-Spalte: Erwähnungen mit Zeile und Markierung; Code, Links und die No
 // Rennen beim Start (CI-Wackler in ki-erwaehnungen.spec): Die ersten Antworten kommen, während die Werkstatt Suchindex bzw. Namenssatz noch aufbaut, und kennen die Notiz
 // noch nicht. Erzwungen: die ersten drei Abrufe beantwortet der Test so (genau die Form der Werkstatt in diesem Zustand), danach antwortet die echte Werkstatt.
 // Die Liste muss trotzdem erscheinen, ohne die Notiz neu zu wählen; für „Diese Notiz erwähnt …“ ebenso.
+test("⌘Z außerhalb des Editors nimmt „Verlinken“ in einer anderen Notiz zurück (R4-4)", async ({ page }) => {
+  await start(page);
+  await waehle(page, KAFFEE);
+  const vorher = lese(EINKAUF);
+  await ein(page).locator(`[data-erw-notiz="${EINKAUF}"] [data-aktion="erw-verlinken"]`).click();
+  await expect(page.locator(".toast").last()).toContainText("1 Erwähnung von „Kaffee“ verlinkt");
+  await expect(page.locator(".toast .toast-kz").last()).toHaveText("⌘Z");
+  expect(lese(EINKAUF)).toContain("[[Kaffee]]");
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press("Meta+z");
+  await expect(page.locator(".toast").last()).toContainText("Verlinken zurückgenommen");
+  expect(lese(EINKAUF)).toBe(vorher);
+  await expect(ein(page).locator("[data-erw-summe]")).toHaveText("3 Stellen in 3 Notizen");
+});
+
 test("Index baut beim ersten Abruf noch: die Liste erscheint trotzdem, ohne die Notiz neu zu wählen", async ({ page }) => {
   const aufbau = [{ index: false, namen: false }, { index: false, namen: false }, { index: true, namen: false }];
   let abrufe = 0, ausAbrufe = 0;

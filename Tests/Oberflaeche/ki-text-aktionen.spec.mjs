@@ -425,3 +425,26 @@ test("⏎ gehört nur zum Popover und zur markierten Stelle (anderswo gibt es ei
   expect(d).not.toContain(ERSATZ);
   await expect(pop(page)).toHaveAttribute("data-phase", "ergebnis");
 });
+
+test("R4-4 / K2 Befund 9: die Übernahme ist EIN eigener Undo-Schritt; ein „x“ danach wird allein zurückgenommen, das nächste ⌘Z holt die KI-Änderung zurück", async ({ page }) => {
+  await aufbauen();
+  szenario({ ersatz: ERSATZ });
+  await oeffne(page);
+  await waehleAbsatz(page);
+  await kiKnopf(page).click();
+  await pop(page).locator('[data-ki-aktion="umschreiben"]').click();
+  await phase(page, "ergebnis");
+  await page.keyboard.press("Enter");
+  await expect(pop(page)).toHaveCount(0);
+  const nachKi = NOTIZ.replace(ABSATZ, ERSATZ);
+  expect(await dok(page)).toBe(nachKi);
+  // sofort danach tippen: innerhalb der Gruppenfrist von CodeMirror (500 ms), unmittelbar hinter der Übernahme – ohne Isolierung würde das „x“ mit ihr verschmelzen
+  await imEditor(page, ({ view }) => { const r = view.state.selection.main; view.dispatch({ changes: { from: r.to, insert: "x" }, selection: { anchor: r.to + 1 }, userEvent: "input.type" }); });
+  expect(await dok(page)).toBe(nachKi.slice(0, nachKi.indexOf(ERSATZ) + ERSATZ.length) + "x" + nachKi.slice(nachKi.indexOf(ERSATZ) + ERSATZ.length));
+  await page.keyboard.press("Meta+z");
+  expect(await dok(page)).toBe(nachKi); // nur das „x“
+  await page.keyboard.press("Meta+z");
+  expect(await dok(page)).toBe(NOTIZ);  // die KI-Änderung
+  await page.keyboard.press("Meta+Shift+z");
+  expect(await dok(page)).toBe(nachKi);
+});

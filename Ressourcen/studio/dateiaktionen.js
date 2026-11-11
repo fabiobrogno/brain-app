@@ -3,14 +3,18 @@
 // hier steht der Ablauf: speichern → Vorschau („N Verweise in M Notizen“) → bestätigen, wenn Verweise betroffen sind → sofort zeigen (optimistisch) → ausführen → bei Fehler zurückrollen.
 // Eine Aktion ist EIN Eintrag im Aktivitätsprotokoll; „Rückgängig“ im Hinweis nimmt genau diesen Eintrag zurück (POST /api/aktivitaet/rueckgaengig).
 import { h, dialog, dialogOffen, toast, dateiName, ohneEndung, ordnerVon } from "./hilfen.js";
+import { menueOffen } from "./menue.js";
+import { popoverOffen } from "./popover.js";
 import { symbol } from "./symbole.js";
 import { knopf as baueKnopf, textfeld, leerBlock } from "./bausteine.js";
 import { oeffneMenue } from "./menue.js";
 import { api } from "./api.js";
 import { lockerFormen } from "./wikilink.js";
 import { TD } from "./texte-dateiaktionen.js";
+import * as stapel from "./vorgang-stapel.js";
 
 const MIME = "application/x-kortex-eintrag";
+const MAC = /Mac|iPhone|iPad/.test(typeof navigator === "undefined" ? "" : navigator.platform || "");
 const FESTE_ORDNER = (S) => new Set([S.inboxOrdner || "00_inbox", S.aufgabenOrdner || "05_aufgaben", "09_wiki", "90_archiv", "01_vorlagen", S.vorlagenOrdner || "01_vorlagen"].map((x) => String(x).toLowerCase()));
 const ungueltigerName = (n) => /[\/\\:\u0000-\u001f]/.test(n) || n.startsWith(".");
 const naechster = (liste, i, d) => (liste.length ? (i + d + liste.length) % liste.length : 0);
@@ -188,12 +192,14 @@ export function erzeugeDateiaktionen(ctx) {
       if ((erg.geaendert || []).includes(abb(S.pfad)) || erg.pfad === S.pfad) await ctx.offeneNeuLaden();
     }
     ctx.planeGit();
-    toast(text, { ms: 8000, aktion: erg.aktivitaetId ? { text: TD.toast.rueckgaengig, tun: () => zurueck(erg.aktivitaetId) } : undefined });
+    if (erg.aktivitaetId) stapel.merke({ id: erg.aktivitaetId, art: spec.art, vault: S.info?.vault });
+    toast(text, { ms: 8000, kuerzel: TD.stapel.kzZurueck, aktion: erg.aktivitaetId ? { text: TD.toast.rueckgaengig, tun: () => zurueck(erg.aktivitaetId) } : undefined });
   }
 
   // Rückgängig (und danach Wiederholen) über den Eintrag im Aktivitätsprotokoll
+  // Ergebnis: "ok" · "weg" (geht nie mehr, Eintrag ist verworfen) · "dialog" (Rückfrage offen) · "fehler" (später noch einmal versuchen); der Stapel für ⌘Z/⇧⌘Z folgt dem Ergebnis
   async function zurueck(id, { teilweise = false, wieder = false } = {}) {
-    if (!(await ctx.sichereVorWechsel())) return;
+    if (!(await ctx.sichereVorWechsel())) return "fehler";
     let r;
     try { r = await (wieder ? api.aktivitaetWiederherstellen(id, undefined, teilweise) : api.aktivitaetRueckgaengig(id, undefined, teilweise)); }
     catch (e) {
@@ -202,12 +208,15 @@ export function erzeugeDateiaktionen(ctx) {
         const d = dialog({ titel: TD.rueckgaengigGeaendert.titel, satz: TD.rueckgaengigGeaendert.satz(n), knoepfe: [
           baueKnopf({ text: TD.rueckgaengigGeaendert.abbrechen, aufKlick: () => d.schliessen() }),
           baueKnopf({ text: TD.rueckgaengigGeaendert.knopf, variante: "primaer", aktion: "trotzdem", aufKlick: () => { d.schliessen(); zurueck(id, { teilweise: true, wieder }); } })] });
-        return;
+        return "dialog";
       }
+      const weg = stapel.istEndgueltig(e);
+      if (weg) stapel.verwirf(id);
       toast(fehlerText(e), { fehler: true });
-      return;
+      return weg ? "weg" : "fehler";
     }
-    if (r.protokollId) selbstAngewandt.add(r.protokollId);
+    if (r.protokollId) selbstAngewandt.add(r.protokollId); // das Live-Ereignis dieses Vorgangs schiebt nichts noch einmal
+    if (wieder) stapel.markiereWieder(id); else stapel.markiereZurueck(id, S.info?.vault, r.vorgangArt);
     pfadGeaendert(r.typ === "ordner" ? "ordner" : r.typ === "datei" ? "datei" : null, r.von, r.nach);
     await folgeTagOrdner(r.typ, r.von, r.nach);
     // Wo liegt die offene Notiz jetzt?
@@ -220,8 +229,27 @@ export function erzeugeDateiaktionen(ctx) {
     ladeKorbZahl();
     if (S.pfad && !S.eintraege.has(S.pfad)) ctx.schliesseDatei(); else if (S.pfad) await ctx.offeneNeuLaden();
     ctx.nachAenderung({ speichern: true });
+    // eine aus dem Papierkorb zurückgelegte Notiz ist danach wieder offen (Ordner: sie liegen einfach wieder da)
+    if (!wieder && r.vorgangArt === "loeschen" && r.typ !== "ordner" && r.pfad && /\.md$/i.test(r.pfad) && !S.pfad && S.eintraege.has(r.pfad)) ctx.oeffne(r.pfad, { ausListe: true }); // ohne Fokus in den Editor: weitere ⌘Z/⇧⌘Z gelten dem Dateistapel
     const art = r.vorgangArt || "umbenennen";
-    toast(wieder ? "Wieder ausgeführt" : TD.toast.zurueck[art] || TD.toast.zurueck.umbenennen, { ms: 6000, aktion: wieder ? undefined : { text: "Wiederholen", tun: () => zurueck(id, { wieder: true }) } });
+    toast(wieder ? "Wieder ausgeführt" : TD.toast.zurueck[art] || TD.toast.zurueck.umbenennen, { ms: 6000, kuerzel: TD.stapel.kzWieder, aktion: wieder ? { text: TD.toast.rueckgaengig, tun: () => zurueck(id) } : { text: "Wiederholen", tun: () => zurueck(id, { wieder: true }) } });
+    return "ok";
+  }
+
+  // ⌘Z / ⇧⌘Z außerhalb des Editors: der letzte Vorgang (Journal der Werkstatt). Mehrfach drücken geht Schritt für Schritt weiter zurück.
+  // Schnell hintereinander gedrückt: die Schritte laufen der Reihe nach (nie zwei zugleich, keiner geht verloren).
+  // Gelingt ein Schritt nicht, kommt sein Eintrag oben zurück (der nächste Druck versucht denselben); öffnet sich eine Rückfrage, verfallen die wartenden Schritte.
+  let kette = Promise.resolve(), generation = 0;
+  const stapelSchritt = (wieder) => { const g = generation; return (kette = kette.then(() => (g === generation ? stapelEinSchritt(wieder) : null)).catch(() => {})); };
+  async function stapelEinSchritt(wieder) {
+    const vault = S.info?.vault;
+    const e = wieder ? stapel.nimmZurueck(vault) : stapel.nimmFertig(vault);
+    if (!e) { toast(wieder ? TD.stapel.leerWieder : TD.stapel.leer, { ms: wieder ? 2500 : 4500 }); return; }
+    let erg;
+    try { erg = await (wieder ? (e.wieder ? e.wieder() : zurueck(e.id, { wieder: true })) : (e.rueck ? e.rueck() : zurueck(e.id))); } catch { erg = "fehler"; }
+    if (erg === "ok" || erg === "weg") return;
+    stapel.legeZurueck(e, wieder);
+    if (erg === "dialog") generation++;
   }
 
   // ───────────── Umbenennen: Notiz ─────────────
@@ -558,10 +586,28 @@ export function erzeugeDateiaktionen(ctx) {
 
   // ───────────── Tasten: F2 und ⌘⌫ ─────────────
   // Nicht über das Register der Tastenkürzel: die Rücktaste ist dort bewusst nicht belegbar. ⌘⌫ im Text bleibt „bis Zeilenanfang löschen“ — es gilt nur außerhalb von Eingabefeldern und Editor.
+  // Liegt etwas über der Hauptansicht (Menü, Popover, Einstellungen, KI-Fenster, Frag, Konfliktansicht) oder steht der Fokus woanders als in Seitenleiste, Liste, Hauptbereich und Info-Spalte? Dann gilt ⌘Z dort, nicht für die Dateien.
+  function ueberlagert(a) {
+    if (menueOffen() || popoverOffen()) return true;
+    if (document.querySelector('.menue.offen, [role="menu"], [aria-modal="true"], [role="dialog"], [data-ki-text], #einstellungen-host:not([hidden])')) return true;
+    if (document.getElementById("app")?.dataset.modus === "konflikt") return true;
+    // schmale Fenster (R4-7): Seitenleiste und Eigenschaften als Überlagerung
+    if (S.seiteSchwebt || (S.infoAn && S.infoEng && S.infoErzwungen)) return true;
+    if (!a || a === document.body || a === document.documentElement) return false;
+    return !a.closest("#seite, #liste, #haupt, #info");
+  }
   function taste(e) {
     if (!S.info?.vault || dialogOffen() || e.isComposing) return false;
     const a = document.activeElement;
     const imFeld = !!a?.closest?.("input, textarea, select, [contenteditable='true'], .cm-editor");
+    // Rückgängig außerhalb von Feldern und Editor (dort gilt der Stapel des Feldes bzw. des Editors). Mac: ⌘Z / ⇧⌘Z; sonst Strg+Z, Strg+Umschalt+Z, Strg+Y (nie die Windows-Taste)
+    const kleinTaste = String(e.key).toLowerCase();
+    const mod = MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+    if (mod && !e.altKey && (kleinTaste === "z" || (!MAC && kleinTaste === "y" && !e.shiftKey))) {
+      if (imFeld || edit || e.repeat || ueberlagert(a)) return false;
+      stapelSchritt(kleinTaste === "y" || e.shiftKey);
+      return true;
+    }
     const inSeite = !!a?.closest?.("#seite");
     const inListe = !!a?.closest?.("#liste");
     const ordnerWahl = (inSeite || a === document.body) && S.sicht.art === "ordner" && (inSeite) ? S.sicht.id : null;
@@ -604,6 +650,6 @@ export function erzeugeDateiaktionen(ctx) {
     umbenennenNotiz, umbenennenOrdner, verschiebenNotiz, verschiebenOrdner, papierkorbNotiz, papierkorbOrdner,
     zeichnePapierkorb, ladeKorbZahl, istFest, geschuetzt, laeuft: () => laeuft, bearbeitet: () => !!edit,
     // nur für Tests und app.js
-    _verschiebe: verschiebe, _fuehre: fuehre, _zurueck: zurueck,
+    _verschiebe: verschiebe, _fuehre: fuehre, _zurueck: zurueck, rueckgaengigSchritt: stapelSchritt,
   };
 }

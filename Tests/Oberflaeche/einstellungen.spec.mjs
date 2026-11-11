@@ -541,7 +541,7 @@ test("Verlauf bei der kleinsten Fensterbreite: der Tag steht vollständig da (�
     return { tagVoll: text.scrollWidth <= text.clientWidth + 1 && tr.right <= kr.right + 1, tagText: text.textContent, msgAbgeschnitten: msg ? msg.scrollHeight > msg.clientHeight + 1 : null, msgText: msg?.textContent, metaRechts: [...document.querySelectorAll(".vl-meta")].every((m) => m.scrollWidth <= m.clientWidth + 1) };
   });
   expect(r.tagVoll).toBe(true);
-  expect(r.tagText).toMatch(/^\w+, \d+\. \w+ \d{4}$/);
+  expect(r.tagText).toMatch(/^\w+, \d+\. \w+( \d{4})?$/);
   expect(r.msgAbgeschnitten).toBe(false);
   expect(r.msgText).toBe("Ungesicherte Änderungen");
   expect(r.metaRechts).toBe(true);

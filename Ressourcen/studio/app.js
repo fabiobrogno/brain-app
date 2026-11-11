@@ -12,7 +12,7 @@ import { textfeld, textbereich, auswahl, hakenFeld, segment, knopf as baueKnopf,
 import { liesKurzformen, faelligText } from "./kurzformen.js";
 import { kiLogo } from "./ki-logos.js";
 import { TV } from "./texte-verlauf.js";
-import { istRohGit } from "./verlauf.js";
+import { istRohGit, detailsBlock } from "./verlauf.js";
 import { diffAnsicht } from "./diff.js";
 import { oeffneMenue, schliesseMenue } from "./menue.js";
 import { baueAktionen, istZurueckgestellt, spaeterBis } from "./posteingang.js";
@@ -97,7 +97,7 @@ const anhaenge = erzeugeAnhaenge({ api, aktionMitAntwort, pfad: () => S.pfad || 
 // Umbenennen, Verschieben, Papierkorb (dateiaktionen.js): Kontextmenü, Umbenennen an Ort und Stelle, Ziehen und Ablegen, F2 und ⌘⌫, Ansicht „Papierkorb“
 const daCtx = {
   anhaenge,
-  S, ladeBaum: () => ladeBaum(), oeffne: (p) => oeffne(p), waehleSicht: (s) => waehleSicht(s), schliesseDatei: () => schliesseDatei(), sichereVorWechsel: () => sichereVorWechsel(),
+  S, ladeBaum: () => ladeBaum(), oeffne: (p, o) => oeffne(p, o), waehleSicht: (s) => waehleSicht(s), schliesseDatei: () => schliesseDatei(), sichereVorWechsel: () => sichereVorWechsel(),
   // Die offene Notiz bleibt während einer Aktion schreibgeschützt (der Pfad kann sich dabei ändern, darum kein posteingangCtx.sperre)
   sperre: () => sperreNotiz(),
   zusatzEintraege: (art, pfad) => exportInst.eintraege(art, pfad), // Export, Kopieren, Teilen im Kontextmenü (export.js)
@@ -2017,7 +2017,11 @@ async function ladeInfo({ leise = false } = {}) {
     liste.forEach((x) => offenMit.push(fassung(x, pfad)));
     if (!offenMit.length) verlaufSek.append(h("p", { klasse: "leise", style: "margin:0", text: T.info.keinVerlauf }));
     else verlaufSek.append(...offenMit);
-  }).catch((e) => { if (nr === infoNr) verlaufSek.append(h("p", { klasse: "leise", style: "margin:0", text: gitGesperrt(e) ? T.info.gitGesperrt : e.status === 400 || e.status === 404 ? T.info.keinVerlauf : e.message })); }));
+  }).catch((e) => {
+    if (nr !== infoNr) return;
+    const roh = !gitGesperrt(e) && e.status !== 400 && e.status !== 404 && istRohGit(e.message);
+    verlaufSek.append(h("p", { klasse: "leise", style: "margin:0", text: gitGesperrt(e) ? T.info.gitGesperrt : e.status === 400 || e.status === 404 ? T.info.keinVerlauf : roh ? TV.roh.verlauf : e.message }), roh ? detailsBlock(e.message) : null);
+  }));
   if (leise) { await Promise.allSettled(aufgaben); if (nr === infoNr && pfad === S.pfad && inhalt._tausch) inhalt._tausch(); }
 }
 // Nach dem Speichern: Wörter, Größe, Verweise, Rückverweise und Verlauf in der Spalte auffrischen (sie zeigten bis dahin den Stand vom Öffnen)
@@ -2048,7 +2052,7 @@ function fassung(x, pfad) {
         const d = await api.diff(pfad, x.arbeitsstand ? undefined : x.sha);
         rumpf.replaceChildren(diffAnsicht(d.diff));
         if (!x.arbeitsstand) rumpf.append(baueKnopf({ text: T.info.wiederherstellen, aktion: "wiederherstellen", aufKlick: () => stelleWiederHer(pfad, x.sha, x.zeit) }));
-      } catch (e) { rumpf.replaceChildren(h("div", { klasse: "fehlertext", text: gitGesperrt(e) ? T.fehler.gitGesperrt : e.message })); }
+      } catch (e) { const roh = !gitGesperrt(e) && istRohGit(e.message); rumpf.replaceChildren(h("div", { klasse: "fehlertext", text: gitGesperrt(e) ? T.fehler.gitGesperrt : roh ? TV.diff.fehler : e.message }), roh ? detailsBlock(e.message) : null); }
     }
   } }, h("span", { klasse: "nachricht", text: x.nachricht }), h("span", { klasse: "meta", text: x.arbeitsstand ? "" : [x.autor, zeitText(x.zeit)].filter(Boolean).join(" · ") }));
   kopf.addEventListener("keydown", (e) => { if (e.key === "Enter") kopf.click(); });

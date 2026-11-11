@@ -108,17 +108,18 @@ function fokussiereDialog(box) {
 // was jemand getippt hat, bleibt über beiSchliessen erhalten (z. B. der Entwurf bei „Schnell merken“).
 export function schliesseDialoge() { for (const zu of [...offeneDialoge]) zu(); }
 
-// Hinweis unten rechts. Einfach: toast("Text", { fehler, aktion: { text, tun }, ms }).
+// Hinweis unten rechts. Einfach: toast("Text", { fehler, aktion: { text, tun }, ms, kuerzel }) (kuerzel: Taste neben dem Knopf, z. B. „⌘Z“).
 // Mit mehreren Aktionen (Mitteilungen, P8): { aktionen: [{ text, tun, primaer }], fett (hervorgehobener Anfang, z. B. der Name der KI), unter (graue Unterzeile), logo (Element links) }.
 // Bei `aktionen` pausiert das Ausblenden, solange die Maus darüber ist oder ein Knopf den Fokus hat. Gibt das Element zurück.
-export function toast(text, { fehler = false, aktion, aktionen, fett, unter, logo, ms = 4200 } = {}) {
+export function toast(text, { fehler = false, aktion, aktionen, fett, unter, logo, ms = 4200, kuerzel } = {}) {
   const host = document.getElementById("toast-host");
   const dauer = fehler ? ms + 2500 : ms;
   const reich = !!(aktionen?.length || fett || unter || logo);
   let t;
   if (!reich) {
     t = h("div", { klasse: "toast" + (fehler ? " fehler" : "") }, h("span", { text }),
-      aktion ? h("a", { text: aktion.text, role: "button", aufClick: () => { aktion.tun(); t.remove(); } }) : null);
+      aktion ? h("a", { text: aktion.text, role: "button", aufClick: () => { aktion.tun(); t.remove(); } }) : null,
+      aktion && kuerzel ? h("kbd", { klasse: "toast-kz", text: kuerzel, "aria-hidden": "true" }) : null);
     host.append(t);
     setTimeout(() => t.remove(), dauer);
     return t;

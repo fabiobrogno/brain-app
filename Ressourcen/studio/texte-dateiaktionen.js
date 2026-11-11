@@ -1,5 +1,6 @@
 // Texte für Umbenennen, Verschieben und den Papierkorb (studio/dateiaktionen.js). Die App heißt Kortex, der Datenordner Vault.
 const nz = (n, eins, viele) => `${n} ${n === 1 ? eins : viele}`;
+const MAC_K = /Mac|iPhone|iPad/.test(typeof navigator === "undefined" ? "" : navigator.platform || "");
 export const TD = {
   menue: { oeffnen: "Öffnen", umbenennen: "Umbenennen", verschieben: "Verschieben …", papierkorb: "In den Papierkorb", neueNotiz: "Neue Notiz hier" },
   umbenennen: { notiz: "Notiz umbenennen", ordner: "Ordner umbenennen", platzhalter: "Neuer Name", leer: "Der Name darf nicht leer sein.", ungueltig: "Im Namen sind / \\ : und ein Punkt am Anfang nicht erlaubt.", zuLang: "Der Name ist zu lang." },
@@ -19,9 +20,11 @@ export const TD = {
     satzOrdner: (n) => `Der Ordner mit ${nz(n, "Notiz", "Notizen")} und allem darin wandert in den Papierkorb und lässt sich dort zurückholen.`,
     knopf: "In den Papierkorb", abbrechen: "Abbrechen",
   },
+  // Kürzel je Plattform (Mac: ⌘Z / ⇧⌘Z; sonst Strg+Z / Strg+Y)
+  stapel: { leer: "Nichts zum Rückgängigmachen. Ältere Vorgänge findest du in der Aktivität.", leerWieder: "Nichts zum Wiederholen", kzZurueck: MAC_K ? "⌘Z" : "Strg+Z", kzWieder: MAC_K ? "⇧⌘Z" : "Strg+Y" },
   toast: {
     umbenannt: "Umbenannt", verschoben: "Verschoben", papierkorb: "In den Papierkorb gelegt", rueckgaengig: "Rückgängig", wieder: "Wiederherstellen",
-    zurueck: { umbenennen: "Umbenennen rückgängig gemacht", verschieben: "Verschieben rückgängig gemacht", verlinken: "Verlinken rückgängig gemacht", aendern: "Änderung rückgängig gemacht", loeschen: "Aus dem Papierkorb zurückgelegt" },
+    zurueck: { umbenennen: "Umbenennen rückgängig gemacht", verschieben: "Verschieben rückgängig gemacht", verlinken: "Verlinken rückgängig gemacht", aendern: "Änderung rückgängig gemacht", "tag-umbenennen": "Tag-Umbenennen rückgängig gemacht", loeschen: "Aus dem Papierkorb zurückgelegt" },
     verweiseAngepasst: (n) => `${nz(n, "Verweis", "Verweise")} angepasst`,
     fehler: "Das hat nicht geklappt.", belegt: "Dort gibt es schon etwas mit diesem Namen.",
     geaendertTitel: "Seit dem Umbenennen wurde weitergearbeitet",
