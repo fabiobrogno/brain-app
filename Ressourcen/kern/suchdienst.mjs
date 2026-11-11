@@ -12,8 +12,10 @@ import { dienstSocket } from "./dienst-client.mjs";
 
 const vault = vaultPfadOderEnde(process.argv, { still: true, kontoPruefen: false }); // Hilfsprozess, liefert nichts an eine KI
 const WIN = process.platform === "win32"; // Windows: Named Pipe statt Datei-Socket (dienst-client.mjs#dienstSocket): nichts zu löschen, zu prüfen, zu schützen
-const logs = join(vault, ".logs"), sock = dienstSocket(vault), pidDatei = join(logs, "suchdienst.pid");
+const logs = join(vault, ".logs"), pidDatei = join(logs, "suchdienst.pid");
 const log = (s) => { try { appendFileSync(join(logs, "hooks.log"), `${new Date().toISOString().slice(0, 19)} suchdienst ${s}\n`); } catch {} };
+let sock;
+try { sock = dienstSocket(vault); } catch { process.stderr.write("suchdienst: kein Geheimnis fuer die Pipe\n"); process.exit(0); } // Windows: ohne lesbares Geheimnis kein Dienst
 if (!WIN && Buffer.byteLength(sock) > 100) { log("fehler=SOCKPFAD"); process.exit(0); }   // macOS-Grenze für Unix-Sockets ~104 Bytes
 mkdirSync(logs, { recursive: true });
 

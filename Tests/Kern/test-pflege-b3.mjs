@@ -54,7 +54,7 @@ test("Schalter aus (Standard): kein Schritt, keine Aufträge, kein Bericht-Absch
   assert.deepEqual(B3.pflegeBerichtZeilen(ctx), []);
 });
 
-test("scharf: Schritte der Reihe nach, EIN Merge, nachMerge mit dem Hash aus main, Protokoll + Bericht; ctx wiederhergestellt", { skip: nurUnix("R4-8 offen: unter Windows nicht gruen, Ursache noch nicht geklaert (pre-commit/Hook-Lauf in der Arbeitskopie, Attrappe claude); Liste in docs/plaene/runde-4.md Stand R4-8") }, async () => {
+test("scharf: Schritte der Reihe nach, EIN Merge, nachMerge mit dem Hash aus main, Protokoll + Bericht; ctx wiederhergestellt", async () => {
   const v = vault();
   const ctx = pflegeCtx(v);
   ctx.grund = "B2-Grund";

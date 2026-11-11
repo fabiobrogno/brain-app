@@ -49,3 +49,14 @@ test("Mitteilung: macOS zeigt den Vault-Namen als Untertitel, Windows und Linux 
   for (const p of ["win32", "linux"]) assert.deepEqual(systemMitteilung(m, p), { title: "Claude Code", body: "Mein Vault: hat 2 Aufgaben angelegt." });
   assert.deepEqual(systemMitteilung({ titel: "Kortex", untertitel: null, text: "x" }, "linux"), { title: "Kortex", body: "x" });
 });
+
+const { trayHinweisNoetig, TRAY_HINWEIS } = await laden("electron/tray.mjs");
+test("Linux ohne Infobereich: der Hinweis kommt einmal, nur unter Linux, nie beim Beenden aus dem Menü, im Test oder bei ausdrücklichem Verbot", () => {
+  assert.equal(trayHinweisNoetig({ plattform: "linux" }), true);
+  assert.equal(trayHinweisNoetig({ plattform: "linux", schonGezeigt: true }), false);
+  assert.equal(trayHinweisNoetig({ plattform: "linux", beendet: true }), false);
+  assert.equal(trayHinweisNoetig({ plattform: "linux", testmodus: true }), false);
+  assert.equal(trayHinweisNoetig({ plattform: "linux", erzwungen: true }), false);
+  for (const p of ["win32", "darwin"]) assert.equal(trayHinweisNoetig({ plattform: p }), false);
+  assert.match(TRAY_HINWEIS.text, /AppIndicator/);
+});

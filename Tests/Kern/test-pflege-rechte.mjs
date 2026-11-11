@@ -157,7 +157,7 @@ test("gepinnter Vault: das ECHTE brain.mjs wirkt mit der Umgebung des Sonnet-Auf
   assert.ok(!existsSync(join(echt2, ".logs", "ingest.lock")), "der echte Vault bleibt unberührt");
 });
 
-test("rufeSonnet: Pfadregeln, Settings und gepinnter Vault stehen im echten Aufruf — auch wenn die Eltern-Umgebung BRAIN_VAULT auf den echten Vault setzt", { skip: nurUnix("R4-8 offen: unter Windows nicht gruen, Ursache noch nicht geklaert (pre-commit/Hook-Lauf in der Arbeitskopie, Attrappe claude); Liste in docs/plaene/runde-4.md Stand R4-8") }, async () => {
+test("rufeSonnet: Pfadregeln, Settings und gepinnter Vault stehen im echten Aufruf — auch wenn die Eltern-Umgebung BRAIN_VAULT auf den echten Vault setzt", async () => {
   const v = neuerPflegeVault();
   const kopie = tempOrdner("kopie");
   const s = fakeSonnet([{ wenn: "QUELLE: x", antwort: "ok" }]);      // fake-sonnet bricht mit Exit 4 ab, wenn Rechte/Settings/Pin fehlen

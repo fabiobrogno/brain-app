@@ -29,7 +29,7 @@ const REPO_GEBUNDEN = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT
 // bei status/diff und --no-recurse-submodules beim Holen).
 const GRUND = ["-c", "core.quotepath=false", "-c", "safe.bareRepository=explicit", "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never",
   "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false", "-c", "push.recurseSubmodules=no",
-  "-c", "diff.ignoreSubmodules=all", "-c", "status.submoduleSummary=false"];
+  "-c", "diff.ignoreSubmodules=all", "-c", "status.submoduleSummary=false", "-c", "core.autocrlf=false"]; // keine Zeilenenden-Umwandlung (Git for Windows: sonst autocrlf=true, Text mit \r beim Wiederherstellen/Verlauf/Diff)
 const OHNE_HOOKS = ["-c", `core.hooksPath=${keineHooks()}`];
 const OHNE_SUBMODULE = ["--ignore-submodules=all"];
 // Ohne Vertrauen darf die Vault-Konfiguration nichts signieren lassen (Git riefe gpg/ssh-keygen aus der Vault-Konfiguration heraus): der

@@ -229,6 +229,8 @@ export function schreibeStarter({ support, plattform = process.platform }) {
 export function installiereLaufzeit({ ressourcen, support, plattform = process.platform }) {
   const node = installiereNode({ quelle: join(ressourcen, "node"), support, plattform });
   const kern = installiereKern({ quelle: join(ressourcen, "Ressourcen", "kern"), support, plattform });
-  const starter = kern ? schreibeStarter({ support, plattform }) : null;
-  return { ...node, kern: kern?.kern ?? null, kernOrdner: kern?.ordner ?? null, starter };
+  // Der Starter ist Zubehör (Hooks, Hintergrunddienst): lässt er sich nicht schreiben (Schreibschutz, Virenscanner), läuft die App trotzdem; der Grund geht an den Aufrufer (Protokoll)
+  let starter = null, starterFehler = null;
+  if (kern) { try { starter = schreibeStarter({ support, plattform }); } catch (e) { starterFehler = String(e?.message || e); } }
+  return { ...node, kern: kern?.kern ?? null, kernOrdner: kern?.ordner ?? null, starter, starterFehler };
 }

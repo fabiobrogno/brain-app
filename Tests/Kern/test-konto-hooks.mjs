@@ -139,17 +139,23 @@ test("Widerspruch --konto und Umgebung: das strengere Recht; Altform ohne --kont
   assert.equal(still(["--konto", "k_aaaaaaaa", "--konto", "k_cccccccc"], {}), true, "zwei verschiedene Werte");
 });
 
-test("Beschädigte, verlinkte oder fehlende Liste: defekt/Link → alle Hooks still (fail-closed); fehlt → bisheriges Verhalten", { skip: nurUnix("R4-8 offen: unter Windows nicht gruen, Ursache noch nicht geklaert (pre-commit/Hook-Lauf in der Arbeitskopie, Attrappe claude); Liste in docs/plaene/runde-4.md Stand R4-8") }, () => {
+test("Beschädigte oder fehlende Liste: defekt → alle Hooks still (fail-closed); fehlt → bisheriges Verhalten", () => {
   const s = szenario({ stufeA: "erweitert" });
   const datei = join(s.support, "ki-konten.json");
   const alleStill = () => { for (const n of ALLE_LESENDEN) { const r = lauf(n, s, { args: ["--konto", "k_aaaaaaaa"], eingabe: eingabeFuer(n), env: hookEnv }); assert.equal(r.aus, "", n); } assert.equal(existsSync(join(s.vault, ".logs")), false); };
   for (const inhalt of ["{ kaputt", "[]", JSON.stringify({ version: 2, konten: {}, vaults: {} })]) { writeFileSync(datei, inhalt); alleStill(); }
-  const ziel = join(temp("konto-ziel-"), "gueltig.json");
-  s.schreibeListe(); writeFileSync(ziel, readFileSync(datei)); rmSync(datei); symlinkSync(ziel, datei);
-  alleStill();
   rmSync(datei);
   const r = lauf("statusline", s, { args: [], eingabe: {} });
   assert.notEqual(r.aus.trim(), "", "Liste fehlt (die neue App lief noch nie): wie bisher");
+});
+
+test("Verlinkte Liste (ki-konten.json als Symlink) → alle Hooks still (fail-closed)", { skip: nurUnix("einen Symlink anzulegen braucht unter Windows den Entwicklermodus oder Administratorrechte; die Prüfung selbst ist dort dieselbe") }, () => {
+  const s = szenario({ stufeA: "erweitert" });
+  const datei = join(s.support, "ki-konten.json");
+  const alleStill = () => { for (const n of ALLE_LESENDEN) { const r = lauf(n, s, { args: ["--konto", "k_aaaaaaaa"], eingabe: eingabeFuer(n), env: hookEnv }); assert.equal(r.aus, "", n); } assert.equal(existsSync(join(s.vault, ".logs")), false); };
+  const ziel = join(temp("konto-ziel-"), "gueltig.json");
+  s.schreibeListe(); writeFileSync(ziel, readFileSync(datei)); rmSync(datei); symlinkSync(ziel, datei);
+  alleStill();
 });
 
 test("Entzug wirkt sofort: derselbe Hook ist nach der Änderung der Liste still", () => {

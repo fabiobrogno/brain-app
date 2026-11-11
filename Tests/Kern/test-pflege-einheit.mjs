@@ -80,7 +80,7 @@ test("arbeit schreibt in den echten Vault → Integrität verletzt (vorher: vaul
   verwerfeArbeitskopie(v, kopie);
 });
 
-test("pre-commit rot → pruefung-rot mit Befund; arbeit scheitert → Grund durchgereicht; nichts geändert → unveraendert", { skip: nurUnix("R4-8 offen: unter Windows nicht gruen, Ursache noch nicht geklaert (pre-commit/Hook-Lauf in der Arbeitskopie, Attrappe claude); Liste in docs/plaene/runde-4.md Stand R4-8") }, async () => {
+test("pre-commit rot → pruefung-rot mit Befund; arbeit scheitert → Grund durchgereicht; nichts geändert → unveraendert", async () => {
   const { v, ctx, kopie } = aufbau();
   let e = await P.einheit(ctx, kopie, { id: "inbox-d", art: "inbox", titel: "d", arbeit: async (p) => { haengeAn(p, SEITE, "VERBOTEN\n"); return { ok: true }; } });
   assert.equal(e.grund, "pruefung-rot");
@@ -97,7 +97,7 @@ test("pre-commit rot → pruefung-rot mit Befund; arbeit scheitert → Grund dur
   verwerfeArbeitskopie(v, kopie);
 });
 
-test("zwei Einheiten, die zweite rot: der erste Commit bleibt, der Merge bringt genau ihn; doppelte ID → -2", { skip: nurUnix("R4-8 offen: unter Windows nicht gruen, Ursache noch nicht geklaert (pre-commit/Hook-Lauf in der Arbeitskopie, Attrappe claude); Liste in docs/plaene/runde-4.md Stand R4-8") }, async () => {
+test("zwei Einheiten, die zweite rot: der erste Commit bleibt, der Merge bringt genau ihn; doppelte ID → -2", async () => {
   const { v, ctx, kopie } = aufbau();
   const a = await P.einheit(ctx, kopie, { id: "inbox-g", art: "inbox", titel: "g", arbeit: async (p) => { haengeAn(p, SEITE, "eins\n"); return { ok: true }; } });
   const b = await P.einheit(ctx, kopie, { id: "inbox-g", art: "inbox", titel: "g2", arbeit: async (p) => { rmSync(join(p, SEITE)); return { ok: true }; } });
@@ -110,7 +110,7 @@ test("zwei Einheiten, die zweite rot: der erste Commit bleibt, der Merge bringt 
   verwerfeArbeitskopie(v, kopie);
 });
 
-test("Probe: uebernehmePflege merged nie", { skip: nurUnix("R4-8 offen: unter Windows nicht gruen, Ursache noch nicht geklaert (pre-commit/Hook-Lauf in der Arbeitskopie, Attrappe claude); Liste in docs/plaene/runde-4.md Stand R4-8") }, async () => {
+test("Probe: uebernehmePflege merged nie", async () => {
   const { v, ctx, kopie } = aufbau();
   ctx.probe = true;
   await P.einheit(ctx, kopie, { id: "inbox-h", art: "inbox", titel: "h", arbeit: async (p) => { haengeAn(p, SEITE, "x\n"); return { ok: true }; } });
@@ -120,7 +120,7 @@ test("Probe: uebernehmePflege merged nie", { skip: nurUnix("R4-8 offen: unter Wi
   verwerfeArbeitskopie(v, kopie);
 });
 
-test("vaultZustand: .logs, Inbox und Archiv zählen nicht, Wiki schon; sammleDiff liefert alt aus HEAD", { skip: nurUnix("R4-8 offen: unter Windows nicht gruen, Ursache noch nicht geklaert (pre-commit/Hook-Lauf in der Arbeitskopie, Attrappe claude); Liste in docs/plaene/runde-4.md Stand R4-8") }, () => {
+test("vaultZustand: .logs, Inbox und Archiv zählen nicht, Wiki schon; sammleDiff liefert alt aus HEAD", () => {
   const { v, kopie } = aufbau();
   const z = P.vaultZustand(v);
   mkdirSync(join(v, ".logs"), { recursive: true }); writeFileSync(join(v, ".logs", "x"), "1");

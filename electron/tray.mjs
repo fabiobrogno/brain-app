@@ -102,3 +102,10 @@ export function linuxTraySichtbar({ ausfuehren = execFile, frist = 3000 } = {}) 
   });
   return (async () => { for (const w of wege) { const r = await frage(w); if (r !== null) return r; } return false; })();
 }
+
+/** Hinweis „Kortex wurde beendet, weil kein Infobereich da ist“: nur Linux, nur beim ersten Schließen, nie beim Beenden aus dem Menü, nie im Test, nie wenn der Nutzer das Bleiben selbst verboten hat. */
+export const trayHinweisNoetig = ({ plattform, beendet = false, testmodus = false, schonGezeigt = false, erzwungen = false }) => plattform === "linux" && !beendet && !testmodus && !schonGezeigt && !erzwungen;
+export const TRAY_HINWEIS = Object.freeze({
+  titel: "Kortex wurde beendet",
+  text: "Dein Desktop zeigt kein Tray-Symbol (Infobereich), darum bleibt Kortex nach dem Schließen des Fensters nicht im Hintergrund. Unter GNOME zeigt die Erweiterung „AppIndicator“ das Symbol. Diesen Hinweis siehst du nur einmal.",
+});

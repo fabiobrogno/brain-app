@@ -101,7 +101,7 @@ test("Umbenennen einer Seite (git mv) → diff-rot wegen Löschen, Arbeitskopie 
   verwerfeArbeitskopie(v, kopie);
 });
 
-test("echter pre-commit: gute Einheit besteht (REV, _log); ein Secret im Text → pruefung-rot, nichts committet", { skip: nurUnix("R4-8 offen: unter Windows nicht gruen, Ursache noch nicht geklaert (pre-commit/Hook-Lauf in der Arbeitskopie, Attrappe claude); Liste in docs/plaene/runde-4.md Stand R4-8") }, async () => {
+test("echter pre-commit: gute Einheit besteht (REV, _log); ein Secret im Text → pruefung-rot, nichts committet", async () => {
   const v = neuerTestVault({ hook: "echt", seiten: { [SEITE]: seitenText({ fm: { name: "orion", description: "Orion" }, rumpf: RUMPF }) } });
   const ctx = neuerLauf(v, { jetzt: JETZT, claudeBefehl: null });
   const kopie = P.legePflegeKopieAn(v, ctx.lauf);
@@ -120,7 +120,7 @@ test("echter pre-commit: gute Einheit besteht (REV, _log); ein Secret im Text �
   verwerfeArbeitskopie(v, kopie);
 });
 
-test("Arbeit committet selbst an der Prüfung vorbei → verworfen, Pflege gestoppt, kein Merge; weitere Einheiten laufen nicht mehr", { skip: nurUnix("R4-8 offen: unter Windows nicht gruen, Ursache noch nicht geklaert (pre-commit/Hook-Lauf in der Arbeitskopie, Attrappe claude); Liste in docs/plaene/runde-4.md Stand R4-8") }, async () => {
+test("Arbeit committet selbst an der Prüfung vorbei → verworfen, Pflege gestoppt, kein Merge; weitere Einheiten laufen nicht mehr", async () => {
   const { v, ctx, kopie } = aufbau();
   const vorher = git(v, "rev-parse", "HEAD");
   const e = await P.einheit(ctx, kopie, { id: "inbox-c1", art: "inbox", titel: "c1", arbeit: async (p) => {
@@ -137,7 +137,7 @@ test("Arbeit committet selbst an der Prüfung vorbei → verworfen, Pflege gesto
   verwerfeArbeitskopie(v, kopie);
 });
 
-test("Commit der Arbeit NACH der letzten Einheit (z. B. Nachlauf) → uebernehmePflege verweigert: ungeprueft; main bleibt", { skip: nurUnix("R4-8 offen: unter Windows nicht gruen, Ursache noch nicht geklaert (pre-commit/Hook-Lauf in der Arbeitskopie, Attrappe claude); Liste in docs/plaene/runde-4.md Stand R4-8") }, async () => {
+test("Commit der Arbeit NACH der letzten Einheit (z. B. Nachlauf) → uebernehmePflege verweigert: ungeprueft; main bleibt", async () => {
   const { v, ctx, kopie } = aufbau();
   const e = await P.einheit(ctx, kopie, { id: "inbox-u1", art: "inbox", titel: "u1", arbeit: async (p) => { haengeAn(p, SEITE, "eins\n"); return { ok: true }; } });
   assert.equal(e.ok, true);

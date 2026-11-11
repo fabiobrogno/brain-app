@@ -81,7 +81,7 @@ test("Probe von Hand bei Schalter „an“: letzter.json und Startmarke gehören
   assert.equal(git(v, "rev-parse", "HEAD"), gitVorher);
 });
 
-test("pre-commit rot: dieser Fakt wartet mit Befund, die anderen werden übernommen", { skip: nurUnix("R4-8 offen: unter Windows wird der Test-pre-commit der Arbeitskopie nicht wirksam (Commit geht durch statt rot), Ursache noch nicht geklaert; Liste in docs/plaene/runde-4.md Stand R4-8") }, async () => {
+test("pre-commit rot: dieser Fakt wartet mit Befund, die anderen werden übernommen", async () => {
   const v = aufbau();
   belegt(v, "r1", "Orion Notiz", "Orion ist VERBOTEN laut Test.", "Orion ist VERBOTEN laut Test", "tool");
   fakeKi(REGELN);

@@ -22,7 +22,7 @@ import { erzeugeUpdater, konfiguriere, updatesMoeglich } from "./updater.mjs";
 import { SCHEMA, HOST, START_URL, istEigeneAdresse, externPruefen } from "./navigation.mjs";
 import { erzeugeGlobaleKuerzel, anzeigeText, acceleratorVon } from "./kuerzel.mjs";
 import { baueMenueVorlage } from "./menue.mjs";
-import { baueTrayVorlage, trayZustand, trayTitel, linuxTraySichtbar } from "./tray.mjs";
+import { baueTrayVorlage, trayZustand, trayTitel, linuxTraySichtbar, trayHinweisNoetig, TRAY_HINWEIS } from "./tray.mjs";
 import { leseEinstellungen as leseMitteilungsEinstellungen, erzeugePlaner, erzeugeLeser, probeMitteilung, systemMitteilung } from "./mitteilungen.mjs";
 import { erzeugeErfassenFenster, antwortErfassen, ERFASSEN_HOST } from "./erfassen-fenster.mjs";
 import { hinweisFuerVault, pruefeEingabe, baueAnfrage, antwortAus, leseArt, merkeArt } from "./erfassen.mjs";
@@ -266,6 +266,15 @@ function starteTray() {
     setInterval(() => aktualisiereTray(), 60_000).unref();
   } catch (e) { tray = null; protokoll(`tray aus: ${e?.message || e}`); } // z. B. Linux ohne Tray-Unterstützung: die App läuft sauber ohne
 }
+// Linux ohne sichtbaren Infobereich: Schließen beendet die App — beim ersten Mal sagt ein Fenster warum (danach nie wieder; die Marke liegt im Support-Ordner)
+function hinweisOhneTray() {
+  try {
+    const marke = join(support, "hinweis-ohne-tray.json");
+    if (!trayHinweisNoetig({ plattform: process.platform, beendet, testmodus: TESTMODUS, schonGezeigt: existsSync(marke), erzwungen: process.env.KORTEX_SCHLIESSEN_IN_TRAY === "0" })) return;
+    writeFileSync(marke, "{}\n");
+    dialog.showMessageBoxSync({ type: "info", title: "Kortex", message: TRAY_HINWEIS.titel, detail: TRAY_HINWEIS.text, buttons: ["OK"] });
+  } catch { /* der Hinweis ist Beiwerk */ }
+}
 let linuxTrayDa = false; // nur Linux: zeigt ein Infobereich das Symbol? (wird nach dem Anlegen des Trays gesetzt)
 const bleibtImTray = () => !beendet && !!tray && (IN_TRAY_SCHLIESSEN || (process.platform === "linux" && linuxTrayDa && process.env.KORTEX_SCHLIESSEN_IN_TRAY !== "0"));
 
@@ -400,7 +409,7 @@ function oeffneFenster() {
     }).then((ok) => { schliessenLaeuft = false; if (!ok) { beendet = false; updateNeustart = false; } /* Beenden abgebrochen */ if (ok && !f.isDestroyed()) { schliessenFrei = true; f.close(); } });
   });
   const dieses = fenster;
-  fenster.on("closed", () => { if (fenster === dieses) fenster = null; if (!bleibtImTray()) app.quit(); });
+  fenster.on("closed", () => { if (fenster === dieses) fenster = null; if (!bleibtImTray()) { hinweisOhneTray(); app.quit(); } });
   wc.on("did-start-navigation", (e) => { if (e.isMainFrame && !e.isSameDocument) aktionen.seiteNeu(); });
   // Absturz des Web-Prozesses: neu laden (?nachAbsturz=1), höchstens 3× in 60 s (wie WebProzessSchutz.swift)
   wc.on("render-process-gone", (_e, d) => {
@@ -445,7 +454,7 @@ function imBrowserOeffnen(url) {
 function bestimmeLaufzeit() {
   if (app.isPackaged) {
     const l = installiereLaufzeit({ ressourcen: process.resourcesPath, support });
-    protokoll(`laufzeit node ${l.version} kern ${l.kern ? "ja" : "nein"}`);
+    protokoll(`laufzeit node ${l.version} kern ${l.kern ? "ja" : "nein"}${l.starterFehler ? ` starter-fehler=${l.starterFehler}` : ""}`);
     return { programm: l.nodeDatei, node: l.node, kern: l.kern };
   }
   const node = findeNode(process.env.PATH);

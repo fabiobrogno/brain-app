@@ -104,7 +104,7 @@ test("Vault nicht auf main → vault-nicht-auf-main, NICHTS bewegt", async () =>
   nichtsAendertSich(v, () => Z.nimmPflegeZurueck(v, { lauf: k.lauf, jetzt: JETZT + 3600e3 }), "vault-nicht-auf-main");
 });
 
-test("pre-commit rot bei der Rücknahme → pruefung-rot, NICHTS bewegt (kein halber Commit, keine Reste)", { skip: nurUnix("R4-8 offen: unter Windows wird der Test-pre-commit der Arbeitskopie nicht wirksam (Commit geht durch statt rot), Ursache noch nicht geklaert; Liste in docs/plaene/runde-4.md Stand R4-8") }, async () => {
+test("pre-commit rot bei der Rücknahme → pruefung-rot, NICHTS bewegt (kein halber Commit, keine Reste)", async () => {
   const v = neuerTestVault({ seiten: { [SEITE]: orion() } });
   const k = await inboxCommit(v);
   writeFileSync(join(v, ".hooks", "pre-commit"), "#!/bin/sh\necho '- SECRETS: Testbefund'\nexit 2\n");

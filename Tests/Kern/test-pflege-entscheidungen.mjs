@@ -201,7 +201,7 @@ test("Ziel aus dem Auftrag ist nur Text: „..“-Pfad und Symlink aus der Kopie
   verwerfeArbeitskopie(v, kopie);
 });
 
-test("Prüfung rot (pre-commit): nichts committet, Seite unverändert, Auftrag bleibt liegen", { skip: nurUnix("R4-8 offen: unter Windows nicht gruen, Ursache noch nicht geklaert (pre-commit/Hook-Lauf in der Arbeitskopie, Attrappe claude); Liste in docs/plaene/runde-4.md Stand R4-8") }, async () => {
+test("Prüfung rot (pre-commit): nichts committet, Seite unverändert, Auftrag bleibt liegen", async () => {
   const v = neuerPflegeVault({ seiten: { [SEITE]: orion() }, hook: "rot" });
   const fp = konfliktKaesten(orion()).konflikte[0].fp;
   const { id } = schreibeEntscheidung(v, { seite: SEITE, nr: 1, wahl: "beide", fingerabdruck: fp });
@@ -214,7 +214,7 @@ test("Prüfung rot (pre-commit): nichts committet, Seite unverändert, Auftrag b
   verwerfeArbeitskopie(v, kopie);
 });
 
-test("Ergebnis geht durch die Diff-Prüfung: _log-Eintrag, rev+1, Betreff; Probe schreibt nichts in den Vault", { skip: nurUnix("R4-8 offen: unter Windows nicht gruen, Ursache noch nicht geklaert (pre-commit/Hook-Lauf in der Arbeitskopie, Attrappe claude); Liste in docs/plaene/runde-4.md Stand R4-8") }, async () => {
+test("Ergebnis geht durch die Diff-Prüfung: _log-Eintrag, rev+1, Betreff; Probe schreibt nichts in den Vault", async () => {
   const v = neuerPflegeVault({ seiten: { [SEITE]: orion() } });
   const fp = konfliktKaesten(orion()).konflikte[0].fp;
   const { id } = schreibeEntscheidung(v, { seite: SEITE, nr: 1, wahl: "a", fingerabdruck: fp });

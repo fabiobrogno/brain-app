@@ -114,7 +114,8 @@ export function starteAnmeldung(o) {
     if (plattform === "win32") {
       // Windows: Stapeldatei. `set "u=%~1"` und verzögerte Ausdehnung, damit & | ^ in der Adresse nie als Befehl gelten; % im Pfad der Datei wird verdoppelt.
       browser = join(dir, "kortex-browser.cmd");
-      writeFileSync(browser, ["@echo off", "setlocal EnableDelayedExpansion", 'set "u=%~1"', `>>"${urlDatei.replaceAll("%", "%%")}" echo(!u!`, "exit /b 0", ""].join("\r\n"));
+      // Der Pfad steht VOR der verzögerten Ausdehnung in einer Variable (ein Benutzername mit ! oder ^ bliebe sonst nicht heil), danach nur noch !datei!.
+      writeFileSync(browser, ["@echo off", `set "datei=${urlDatei.replaceAll("%", "%%")}"`, "setlocal EnableDelayedExpansion", 'set "u=%~1"', '>>"!datei!" echo(!u!', "exit /b 0", ""].join("\r\n"));
     } else {
     browser = join(dir, "kortex-browser");
     writeFileSync(browser, `#!/bin/sh\n# Kortex: meldet nur die Adresse zurück, öffnet keinen Browser.\nprintf '%s\\n' "$1" >> ${shellText(urlDatei)}\nexit 0\n`, { mode: 0o700 });

@@ -3,21 +3,38 @@
 import net from "node:net";
 import { spawn, execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { supportOrdner, prozessListe } from "./plattform.mjs";
 import { fileURLToPath } from "node:url";
-import { statSync, writeFileSync, readFileSync, mkdirSync, rmSync } from "node:fs";
+import { statSync, writeFileSync, readFileSync, mkdirSync, rmSync, appendFileSync } from "node:fs";
 
-// Adresse des Suchdienst-Sockets. macOS/Linux: Unix-Socket <Vault>/.logs/suchdienst.sock. Windows: Named Pipe \\.\pipe\kortex-suchdienst-<Hash des Vault-Pfads> (Unix-Sockets in Temp-Ordnern
+// Windows: das Geheimnis des Benutzers für den Pipe-Namen. Ein Name, der nur aus dem Vault-Pfad folgt, ließe sich erraten: ein anderer lokaler Benutzer legte die Pipe vorher an, der echte Dienst
+// endete (EADDRINUSE), und der Hinweis-Hook übernähme die Antworten des Fremden in den Claude-Kontext. 32 Zufallsbytes in einer Datei im Support-Ordner des Benutzers (Windows: unter %APPDATA%, nur für
+// den Benutzer lesbar; Rechte 0600 für Linux/Test); wer die Datei nicht lesen kann, kennt den Namen nicht. Wirft, wenn sie sich weder lesen noch anlegen lässt (dann gibt es keinen Dienst: EDIENST).
+export function dienstGeheimnis(support = supportOrdner()) {
+  const datei = join(support, "suchdienst-geheimnis");
+  const lies = () => { const t = readFileSync(datei, "utf8").trim(); return /^[0-9a-f]{64}$/.test(t) ? t : null; };
+  try { const g = lies(); if (g) return g; } catch { /* neu anlegen */ }
+  mkdirSync(support, { recursive: true });
+  const neu = randomBytes(32).toString("hex");
+  try { writeFileSync(datei, neu + "\n", { flag: "wx", mode: 0o600 }); return neu; }
+  catch (e) { if (e?.code !== "EEXIST") throw e; }
+  const g = lies(); // ein anderer Prozess war schneller (oder die Datei ist kaputt: dann kein Dienst)
+  if (!g) throw new Error("Geheimnis des Suchdienstes unlesbar");
+  return g;
+}
+// Adresse des Suchdienst-Sockets. macOS/Linux: Unix-Socket <Vault>/.logs/suchdienst.sock. Windows: Named Pipe \\.\pipe\kortex-suchdienst-<Hash aus Geheimnis und Vault-Pfad> (Unix-Sockets in Temp-Ordnern
 // scheitern dort mit EACCES; eine Pipe verschwindet mit ihrem Prozess, es gibt keine Leiche und keine Pfadlängen-Grenze).
-export const dienstSocket = (vault, plattform = process.platform) => (plattform === "win32"
-  ? `\\\\.\\pipe\\kortex-suchdienst-${createHash("sha256").update(join(vault).toLowerCase()).digest("hex").slice(0, 24)}`
+export const dienstSocket = (vault, plattform = process.platform, { support } = {}) => (plattform === "win32"
+  ? `\\\\.\\pipe\\kortex-suchdienst-${createHash("sha256").update(dienstGeheimnis(support)).update("\0").update(join(vault).toLowerCase()).digest("hex").slice(0, 32)}`
   : join(vault, ".logs", "suchdienst.sock"));
 const pfade = (vault) => { const l = join(vault, ".logs"); return { l, sock: dienstSocket(vault), pid: join(l, "suchdienst.pid"), haengt: join(l, "dienst-haengt"), start: join(l, "dienst-start") }; };
 const fehler = (code) => Object.assign(new Error("Suchdienst"), { code });
 const juengerAls = (f, ms) => { try { return Date.now() - statSync(f).mtimeMs < ms; } catch { return false; } };
 
 export function frageDienst(vault, payload, { connectMs = 150, antwortMs = 2500 } = {}) {
-  const { sock } = pfade(vault);
+  let sock;
+  try { ({ sock } = pfade(vault)); } catch { return Promise.reject(fehler("EDIENST")); }
   if (process.platform !== "win32" && Buffer.byteLength(sock) > 100) return Promise.reject(fehler("ESOCKPFAD"));
   return new Promise((ja, nein) => {
     let raus = "", fertig = false;
@@ -49,6 +66,12 @@ export function meldeHaenger(vault) {
   try { writeFileSync(p.haengt, new Date().toISOString()); rmSync(zaehler, { force: true }); } catch {}
   try {
     const pid = Number(readFileSync(p.pid, "utf8").trim());
+    if (process.platform === "win32") { // kein ps: Befehlszeile über die Prozessliste prüfen (nur ein echter Suchdienst), dann genau diese PID beenden
+      const liste = prozessListe();
+      if (!liste) { try { appendFileSync(join(p.l, "hooks.log"), `${new Date().toISOString().slice(0, 19)} dienst-haenger kill=uebersprungen (Prozessliste nicht lesbar)\n`); } catch {} return; }
+      if (pid > 0 && liste.some((x) => x.pid === pid && x.befehl.includes("suchdienst.mjs"))) { execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore", timeout: 10_000 }); rmSync(p.pid, { force: true }); }
+      return;
+    }
     if (pid > 0 && execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8", windowsHide: true }).includes("suchdienst.mjs")) {
       process.kill(pid, "SIGKILL"); rmSync(p.sock, { force: true }); rmSync(p.pid, { force: true });
     }
