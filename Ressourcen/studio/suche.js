@@ -5,12 +5,15 @@ import { h, dateiName, ohneEndung } from "./hilfen.js";
 import { symbol } from "./symbole.js";
 import { filterChip } from "./bausteine.js";
 import { T } from "./texte.js";
+import { ohneMarkdown, neueMarken } from "./suche-text.js";
+export { ohneMarkdown, nachAbdeckung } from "./suche-text.js";
 
 const TV = T.volltext;
 
-// → Knoten: Text mit <mark> an den Bereichen (sortiert, nicht überlappend; ungültige werden übersprungen)
-export function markiert(text, marken) {
-  const s = String(text ?? "");
+// → Knoten: Text mit <mark> an den Bereichen (sortiert, nicht überlappend; ungültige werden übersprungen). Markdown-Zeichen werden vorher entfernt (roh: true lässt sie stehen).
+export function markiert(text, marken, { roh = false } = {}) {
+  let s = String(text ?? "");
+  if (!roh) { const o = ohneMarkdown(s); marken = neueMarken(marken, o.karte); s = o.text; }
   const aus = [];
   let pos = 0;
   for (const [von, bis] of [...(marken || [])].sort((a, b) => a[0] - b[0])) {
@@ -34,7 +37,7 @@ export function trefferKarte(t, o) {
     h("div", { klasse: "karte-kopf" },
       h("div", { klasse: "karte-titel" }, ...markiert(t.titel || ohneEndung(dateiName(t.pfad)), t.titelMarken)),
       h("div", { klasse: "karte-marken" }, o.symbolFuer ? o.symbolFuer(o.typ) : symbol("notiz", 14))),
-    stellen.length ? h("div", { klasse: "fundstellen" }, stellen) : (t.auszug ? h("div", { klasse: "auszug", text: t.auszug }) : null),
+    stellen.length ? h("div", { klasse: "fundstellen" }, stellen) : (t.auszug ? h("div", { klasse: "auszug", text: ohneMarkdown(t.auszug).text }) : null),
     h("div", { klasse: "pfadzeile" }, h("span", { klasse: "pfad-text", text: t.pfad }), t.anzahl > 1 ? h("span", { klasse: "anzahl", text: TV.stellen(t.anzahl) }) : null));
 }
 

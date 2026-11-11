@@ -11,7 +11,8 @@
 :root:not([data-pal])[data-theme="dark"] { --akzent: #a89fff; --akzent-text: #14112e; }
 
 /* Hell/Standard: Grundlage und Rückfall */
-:root, [data-pal] {
+/* [data-pal] am Mini-Fenster der Einstellungen; die Einträge der Palette tragen data-pal als Art („notiz“, „befehl“) und gehören nicht dazu (sonst: heller Auswahlbalken im dunklen Schema) */
+:root, [data-pal]:not(:where(.pal-eintrag)) { /* :where hält die Spezifität gleich: die Palettenregeln darunter müssen weiter gewinnen */
   --papier: #ffffff; --seite: #fafafa; --erhoben: #ffffff; --hover: #f4f4f5; --auswahl: #ececee; --text: #0a0a0a; --text-2: #6b6b6b; --text-3: #6b6b6b; --linie: #e5e5e5; --linie-stark: #d4d4d4; --eingabe: #dcdcde; --code: #f4f4f5;
   --liste: var(--papier);
   --seite-2: color-mix(in srgb, var(--text) 4%, var(--papier));

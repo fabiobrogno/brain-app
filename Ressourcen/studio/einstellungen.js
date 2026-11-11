@@ -21,7 +21,6 @@ import { erzeugeDarstellung } from "./einstellungen-darstellung.js";
 import { DARSTELLUNGS_SCHLUESSEL } from "./darstellung.js";
 import { TD } from "./texte-darstellung.js";
 import { erzeugeTasten, tastenAbschnitte } from "./einstellungen-tasten.js";
-import { TKZ } from "./texte-tasten.js";
 
 export const BLINK_MS = 1600; // Sprungziel leuchtet kurz auf (Orca: 3000 ms; ruhiger)
 
@@ -395,7 +394,7 @@ function zuruecksetzenDialog() {
 
 // Zeilen mit eigener Steuerung: id → ({ z, zeile }) → Steuerung (Knoten) oder { steuerung, unten, voll }
 const SONDER = {
-  "version-info": () => ({ steuerung: null, titel: `Kortex ${Z.k.version() || TE.versionDev}` }),
+  "version-info": () => ({ steuerung: null, titel: `Kortex ${Z.k.version() || TE.versionDev}`, text: Z.k.browser && !Z.k.electron ? TE.versionHinweis.browser : Z.k.electron ? TE.versionHinweis.ablage : TE.versionHinweis.programm }),
   vorschau: () => { const v = Z.dz.vorschauKarte(); v.zeige(Z.daten?.werte || {}); return { voll: v.voll }; },
   "darst-reset": () => ({ steuerung: knopfS({ text: TD.zuruecksetzen, symbol: "zuruecksetzen", daten: { "data-aktion": "darst-reset" }, aufKlick: darstellungZuruecksetzen }) }),
   "vaults-liste": () => { const host = h("div", { klasse: "ez-vaults", "data-vaults": "liste" }); Z.dynamisch.set("vaults", vaultZeilen(host)); return { voll: host }; },
@@ -447,13 +446,13 @@ function ueberKarte() {
 function zeileText(id, text) { const e = Z.zeilen.get(id); if (e?.textEl) { e.textEl.textContent = text; e.originalText = text; } }
 
 function bauZeile(b, a, z) {
-  let steuerung = null, reg = null, voll = null, spalte = null, unten = null, marke = z.experiment ? einstellMarke(TE.experiment) : z.bald ? einstellMarke(TE.bald, "akzent") : null, titel = z.titel;
+  let steuerung = null, reg = null, voll = null, spalte = null, unten = null, marke = z.experiment ? einstellMarke(TE.experiment) : z.bald ? einstellMarke(TE.bald, "akzent") : null, titel = z.titel, textUeber;
   if (z.sonder) {
     if (z.kuerzelId) { const r = Z.tasten.zeile(z); steuerung = r.steuerung; marke = r.marke; } // Tastenkürzel (P10): einstellungen-tasten.js
     else if (z.taste) steuerung = kbdGruppe(z.taste);
     else {
       const r = SONDER[z.id]?.(z) || {};
-      steuerung = r.steuerung || null; voll = r.voll || null; unten = r.unten || null; marke = r.marke || marke; titel = r.titel || titel;
+      steuerung = r.steuerung || null; voll = r.voll || null; unten = r.unten || null; marke = r.marke || marke; titel = r.titel || titel; textUeber = r.text;
       if (z.badge && z.id.startsWith("lizenz-")) steuerung = pillText(z.badge);
     }
   } else if (BAUER[z.art]) {
@@ -463,7 +462,7 @@ function bauZeile(b, a, z) {
     const r = Z.dz.bauer[DZ_ART[z.art]](z);
     steuerung = r.steuerung || null; reg = r.reg; spalte = r.voll || null;
   }
-  const zeile = einstellZeile({ id: z.id, titel, text: z.text, steuerung: voll ? null : steuerung, unten, marke, hoch: z.art === "liste" || z.art === "regler" || z.art === "symbole", klasse: voll ? "ez-voll ez-ohne-kopf" : spalte ? "ez-spalte" : "" });
+  const zeile = einstellZeile({ id: z.id, titel, text: textUeber ?? z.text, steuerung: voll ? null : steuerung, unten, marke, hoch: z.art === "liste" || z.art === "regler" || z.art === "symbole", klasse: voll ? "ez-voll ez-ohne-kopf" : spalte ? "ez-spalte" : "" });
   if (z.id.startsWith("lizenz-")) zeile.classList.add("ez-lizenz");
   if (voll) zeile.append(voll);
   if (spalte) zeile.append(spalte);
@@ -561,7 +560,7 @@ function baueGeruest() {
     alle[(i + (ev.key === "ArrowDown" ? 1 : alle.length - 1)) % alle.length].focus();
   });
   const nav = h("aside", { klasse: "e-nav" }, zurueck, h("div", { klasse: "e-suche" }, such.el), liste,
-    h("div", { klasse: "e-fuss" }, symbol("info", GROESSE.klein), h("span", { text: TE.fuss })));
+    );
   const kopf = h("header", { klasse: "e-kopf" }, h("h1", { "data-einst": "titel" }), h("span", { klasse: "wo", "data-einst": "treffer", "aria-live": "polite" }),
     vorschauPille(),
     h("span", { klasse: "e-stand", "data-stand": "", role: "status" }, h("span", { klasse: "an-speichert" }, h("span", { klasse: "ez-dreh", "aria-hidden": "true" }), TE.speichertGerade), h("span", { klasse: "an-gespeichert" }, symbol("haken", GROESSE.klein), TE.gespeichert)));
@@ -569,7 +568,7 @@ function baueGeruest() {
   const inhalt = h("main", { klasse: "e-inhalt", tabindex: "-1", "data-einst": "inhalt" }, h("div", { klasse: "e-blatt" }, kopf, bereiche));
   inhalt.addEventListener("scroll", () => inhalt.classList.toggle("gerollt", inhalt.scrollTop > 4), { passive: true });
   const status = h("footer", { klasse: "e-status" },
-    h("span", { klasse: "e-status-punkt", "aria-hidden": "true" }), h("span", { text: TE.statusDatei }), h("span", { klasse: "e-status-dateien mono", "data-einst": "dateien" }),
+    h("span", { klasse: "e-status-punkt", "aria-hidden": "true" }), h("span", { text: TE.statusDatei }),
     h("span", { klasse: "e-status-version", text: `Kortex ${Z.k.version() || TE.versionDev}` }));
   const wurzel = h("div", { klasse: "einst", role: "dialog", "aria-modal": "true", "aria-label": TE.seite, "data-einstellungen": "" }, nav, inhalt, status);
   Z.suchfeld = such;
@@ -657,8 +656,6 @@ function zeichneInhalt({ scrollNachOben = true } = {}) {
     renderNav(r.bereiche);
   }
   if (scrollNachOben) inhalt.scrollTop = 0;
-  // Fußzeile: wo die Werte dieser Seite liegen (Tastenkürzel: eigene Datei)
-  Z.host.querySelector("[data-einst=dateien]").textContent = (!q && Z.bereich === "tasten" ? [TKZ.datei] : [Z.daten?.dateien?.vault, Z.daten?.dateien?.app]).filter(Boolean).join(" · ");
 }
 function setzeSuche(text) { const i = Z.suchfeld.input; i.value = text; i.dispatchEvent(new Event("input", { bubbles: true })); i.focus(); }
 

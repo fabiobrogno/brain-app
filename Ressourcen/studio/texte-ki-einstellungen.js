@@ -5,8 +5,8 @@ import { plattformTexte } from "./plattform-texte.js";
 export const TKE = plattformTexte({
   // ---- Übersicht
   kacheln: {
-    angemeldet: (n, von) => ({ zahl: `${n} von ${von}`, text: von === 1 ? "Konto angemeldet" : "Konten angemeldet" }),
-    anmeldungNoetig: (n) => ({ zahl: String(n), text: n === 1 ? "braucht deine Anmeldung" : "brauchen deine Anmeldung" }),
+    angemeldet: (n, von) => (von === 0 ? { zahl: "–", text: "Noch kein Konto" } : { zahl: `${n} von ${von}`, text: von === 1 ? "Konto angemeldet" : "Konten angemeldet" }),
+    anmeldungNoetig: (n) => (n === 0 ? { zahl: "0", text: "Anmeldungen offen" } : { zahl: String(n), text: n === 1 ? "braucht deine Anmeldung" : "brauchen deine Anmeldung" }),
     programme: (n) => ({ zahl: String(n), text: n === 1 ? "Programm gefunden" : "Programme gefunden" }),
     sperren: (n) => ({ zahl: String(n), text: n === 1 ? "Sperre in Kortex" : "Sperren in Kortex" }),
     sucht: "…",

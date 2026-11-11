@@ -31,7 +31,7 @@ class BildWidget extends WidgetType {
   toDOM(view) {
     const { A, o } = this;
     const name = o.alt || o.ziel.split("/").pop();
-    const box = h("span", { klasse: "cm-anhang cm-anhang-bild" + (this.dahinter ? " cm-anhang-dahinter" : ""), "data-ziel": o.ziel, title: TAN.bildOeffnen(name) });
+    const box = h("span", { klasse: "cm-anhang cm-anhang-bild" + (this.dahinter ? " cm-anhang-dahinter" : ""), "data-ziel": o.ziel, "data-tipp-text": TAN.bildOeffnen(name) });
     const img = new Image();
     img.className = "cm-anhang-img";
     img.alt = name; img.decoding = "async"; img.draggable = false;
@@ -58,7 +58,7 @@ class PlatzhalterWidget extends WidgetType {
     const { A, adresse } = this;
     const nurHttps = !/^https:\/\//i.test(adresse);
     const host = A.kurzHost(adresse);
-    const knopf = h("span", { klasse: "cm-anhang cm-anhang-extern" + (nurHttps ? " gesperrt" : "") + (this.dahinter ? " cm-anhang-dahinter" : ""), role: "button", "data-extern": adresse, title: nurHttps ? TAN.externNurHttps : TAN.externText },
+    const knopf = h("span", { klasse: "cm-anhang cm-anhang-extern" + (nurHttps ? " gesperrt" : "") + (this.dahinter ? " cm-anhang-dahinter" : ""), role: "button", "data-extern": adresse, "data-tipp-text": nurHttps ? TAN.externNurHttps : TAN.externText },
       symbol("extern", GROESSE.text),
       h("span", { klasse: "cm-anhang-text" }, h("span", { klasse: "cm-anhang-name", text: TAN.externPlatzhalter(host) }), h("span", { klasse: "cm-anhang-zusatz", text: nurHttps ? TAN.externNurHttps : TAN.externLaden })));
     knopf.addEventListener("mousedown", (e) => { e.preventDefault(); if (e.button === 0 && !nurHttps) A.erlaubeExtern(adresse); });
@@ -74,10 +74,10 @@ class DateiWidget extends WidgetType {
     const { A, ziel, von } = this;
     const kurz = ziel.split("/").pop();
     const groesse = h("span", { klasse: "cm-anhang-zusatz" });
-    const chip = h("span", { klasse: "cm-anhang cm-anhang-chip" + (this.dahinter ? " cm-anhang-dahinter" : ""), role: "button", "data-ziel": ziel, title: TAN.dateiOeffnen(kurz) },
+    const chip = h("span", { klasse: "cm-anhang cm-anhang-chip" + (this.dahinter ? " cm-anhang-dahinter" : ""), role: "button", "data-ziel": ziel, "data-tipp-text": TAN.dateiOeffnen(kurz) },
       symbol("notiz", GROESSE.text), h("span", { klasse: "cm-anhang-text" }, h("span", { klasse: "cm-anhang-name", text: kurz }), groesse));
     A.aufloesen(ziel, von).then((r) => {
-      if (!r) { chip.classList.add("fehlt"); chip.title = TAN.dateiFehlt(kurz); groesse.textContent = TAN.nichtGefunden; }
+      if (!r) { chip.classList.add("fehlt"); chip.dataset.tippText = TAN.dateiFehlt(kurz); groesse.textContent = TAN.nichtGefunden; }
       else { chip.dataset.pfad = r.pfad; groesse.textContent = groesseText(r.groesse); }
       view.requestMeasure();
     });

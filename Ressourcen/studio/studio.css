@@ -139,7 +139,7 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible, summary:focus-v
 .baum .pfeil:hover { background: var(--hover-2); color: var(--text); }
 .baum .pfeil .sym { transition: transform var(--t) var(--ease); }
 .baum .pfeil.offen .sym { transform: rotate(90deg); }
-.baum .pfeil.leer { visibility: hidden; }
+.baum .pfeil.ohne { visibility: hidden; }
 .baum .zeile > .sym.ordner-sym { color: var(--text-2); }
 .baum .zeile[aria-current="true"] > .sym.ordner-sym { color: var(--text); }
 .baum .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
