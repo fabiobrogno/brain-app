@@ -47,9 +47,8 @@ test("F6 und ⇧F6 springen Seitenleiste → Liste → Editor → Info und zurü
   await page.keyboard.press("Meta+j");
   await expect(page.locator("#app")).toHaveAttribute("data-frage", "an");
   await expect.poll(() => region(page)).toBe("frage"); // der Fokus geht verzögert ins Panel: erst abwarten
-  await page.keyboard.press("Shift+F6");
-  await page.keyboard.press("Shift+F6");
-  await page.keyboard.press("Shift+F6");
+  await page.keyboard.press("Shift+F6"); // Frag → Editor
+  await page.keyboard.press("Shift+F6"); // → Liste
   expect(await region(page)).toBe("liste");
   await page.keyboard.press("F6"); await page.keyboard.press("F6");
   expect(await region(page)).toBe("frage");
