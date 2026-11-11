@@ -73,7 +73,7 @@ test("Knopf: Glocke vor „Frag“, ohne ungelesene Meldungen keine Zahl; Name, 
   await oeffneStudio(page);
   await expect(glocke(page)).toBeVisible();
   await expect(glocke(page)).toHaveAttribute("aria-label", "Mitteilungen");
-  await expect(glocke(page)).toHaveAttribute("title", "Mitteilungen (⇧⌘B)");
+  await expect(glocke(page)).toHaveAttribute("data-tipp-text", "Mitteilungen (⇧⌘B)");
   await expect(glocke(page)).toHaveAttribute("aria-haspopup", "dialog");
   await expect(zahl(page)).toBeHidden();
   const g = await glocke(page).boundingBox(), f = await page.locator("#knopf-frage").boundingBox();

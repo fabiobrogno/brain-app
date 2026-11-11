@@ -87,7 +87,7 @@ test("Segment: ein Eintrag je Konto mit Logo, Name, 5 Std, Balken und Woche (gen
   await expect(c.locator(".kt-seg").first()).toHaveText("5 Std 9 % verbraucht");
   await expect(c.locator(".kt-woche")).toHaveText("Woche 71 %");
   await expect(leiste(page)).toHaveAttribute("aria-haspopup", "dialog");
-  await expect(leiste(page)).toHaveAttribute("title", /Privat: 5 Std 42 % verbraucht, noch 2 h 14 min · Woche 18 % verbraucht, bis So 19:00\nCodex: 5 Std 9 % verbraucht/);
+  await expect(leiste(page)).toHaveAttribute("data-tipp-text", /Privat: 5 Std 42 % verbraucht, noch 2 h 14 min · Woche 18 % verbraucht, bis So 19:00\nCodex: 5 Std 9 % verbraucht/);
   await foto(page, "segment-voll-hell");
   expect(f).toEqual([]);
   await page.emulateMedia({ colorScheme: "dark" });
@@ -177,7 +177,7 @@ test("„+N“: das dringende Konto (91 %) bleibt, die ruhigen werden zur Zahl; 
   await expect(leiste(page).locator(".kt-eintrag")).toHaveAttribute("data-konto", k[3].id);
   await expect(leiste(page).locator(".kt-eintrag")).toHaveAttribute("data-stufe", "rot");
   await expect(leiste(page).locator(".kt-mehr")).toHaveText("+7");
-  await expect(leiste(page).locator(".kt-mehr")).toHaveAttribute("title", /7 weitere Konten: Konto 1, Konto 2, Konto 3, Konto 5/);
+  await expect(leiste(page).locator(".kt-mehr")).toHaveAttribute("data-tipp-text", /7 weitere Konten: Konto 1, Konto 2, Konto 3, Konto 5/);
   await foto(page, "plus-n-hell");
 });
 
@@ -190,7 +190,7 @@ test("Symbol-Stufe: nur das Tachosymbol, der Tooltip trägt die Werte, der Klick
   expect(await ueberlauf(page)).toEqual({ scroll: 0, aus: [] });
   await expect(leiste(page).locator(".kt-eintrag")).toHaveCount(0);
   await expect(leiste(page).locator("svg")).toHaveCount(1);
-  await expect(leiste(page)).toHaveAttribute("title", /Konto 1: 5 Std 95 %/);
+  await expect(leiste(page)).toHaveAttribute("data-tipp-text", /Konto 1: 5 Std 95 %/);
   await expect(leiste(page)).toHaveAttribute("data-ton", "dringend");
   await leiste(page).click();
   await expect(pop(page)).toBeVisible();
@@ -228,7 +228,7 @@ test("Popover „Kontingent“: alle Konten nach Programm, beide Balken mit Rüc
   await expect(pop(page).locator('.kt-konto[data-konto="k_aaaa0003"] [data-fenster="weekly"] .kt-prozent')).toHaveText("71 %");
   const neu = pop(page).locator('[data-aktion="kt-neu"]');
   await expect(neu).toBeDisabled();
-  await expect(neu).toHaveAttribute("title", /Frühestens um 13:01 Uhr wieder möglich\. Kortex fragt höchstens alle 5 Minuten nach\./);
+  await expect(neu).toHaveAttribute("data-tipp-text", /Frühestens um 13:01 Uhr wieder möglich\. Kortex fragt höchstens alle 5 Minuten nach\./);
   await expect(pop(page).locator('[data-aktion="kt-konten"]')).toHaveText("Konten verwalten …");
   await expect(pop(page).locator('[data-kt="anzeige"]')).toBeVisible();
   await foto(page, "popover-hell");

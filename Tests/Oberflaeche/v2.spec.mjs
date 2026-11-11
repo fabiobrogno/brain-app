@@ -389,7 +389,7 @@ test("Tastenkürzel-Übersicht per ⌘/ zeigt Gruppen mit Kürzeln, Esc schließ
   await page.keyboard.press("Meta+/");
   const dlg = page.locator(".dialog");
   await expect(dlg).toContainText("Tastenkürzel");
-  await expect(dlg.locator(".kuerzel section")).toHaveCount(3);
+  expect(await dlg.locator(".kuerzel section").count()).toBeGreaterThanOrEqual(8); // R4-3: alle Gruppen des Registers plus feste Tasten
   await expect(dlg.locator("kbd").first()).toBeVisible();
   await expect(dlg).toContainText("Schnell merken");
   await page.keyboard.press("Escape");

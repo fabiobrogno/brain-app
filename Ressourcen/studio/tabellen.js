@@ -435,9 +435,10 @@ function rohEnter(view) {
 // ---------- Befehl „Tabelle einfügen“ ----------
 // Fügt eine Tabelle (3 Spalten, 2 leere Zeilen) als eigenen Block an der Cursorstelle ein, mit Leerzeile davor und danach.
 // Danach steht der Cursor in der ersten Überschrift: in der Tabellenansicht (Fokus in der Zelle), im Rohtext mit markiertem Text.
-export function fuegeTabelleEin(view, roh = false) {
-  if (view.state.readOnly) return false;
-  const st = view.state, lb = st.lineBreak, doc = st.doc;
+// Die Änderung für „Tabelle einfügen“ an der Cursorzeile: { changes, selection, von } (von = Beginn der Tabelle im neuen Text). Rein: der Aufrufer wendet sie an
+// (das Schrägstrich-Menü setzt sie mit dem Entfernen des „/…“ zu EINER Transaktion zusammen).
+export function tabelleAnderung(st, roh = false) {
+  const lb = st.lineBreak, doc = st.doc;
   const zeile = doc.lineAt(st.selection.main.head);
   let pos, vorne = "", hinten = "";
   const nachfolger = zeile.number < doc.lines ? doc.line(zeile.number + 1) : null;
@@ -447,12 +448,15 @@ export function fuegeTabelleEin(view, roh = false) {
   const text = vorne + t.text.replace(/\n/g, lb) + hinten;
   const von = pos + vorne.length;
   const erste = t.starts[0][0];
-  view.dispatch({
-    changes: { from: pos, insert: text },
-    selection: roh ? EditorSelection.range(von + erste, von + erste + "Spalte 1".length) : EditorSelection.cursor(von + t.text.length + lb.length),
-    userEvent: "input.tabelle", scrollIntoView: true,
-  });
+  return { changes: { from: pos, insert: text }, selection: roh ? EditorSelection.range(von + erste, von + erste + "Spalte 1".length) : EditorSelection.cursor(von + t.text.length + lb.length), von };
+}
+// Nach dem Einfügen: die erste Zelle der Tabelle bei `von` bekommt den Fokus (nicht im Rohtext)
+export const tabelleFokus = (view, von) => fokussiere(view, von, 0, 0, true, 10);
+export function fuegeTabelleEin(view, roh = false) {
+  if (view.state.readOnly) return false;
+  const a = tabelleAnderung(view.state, roh);
+  view.dispatch({ changes: a.changes, selection: a.selection, userEvent: "input.tabelle", scrollIntoView: true });
   view.focus();
-  if (!roh) fokussiere(view, von, 0, 0, true, 10);
+  if (!roh) tabelleFokus(view, a.von);
   return true;
 }

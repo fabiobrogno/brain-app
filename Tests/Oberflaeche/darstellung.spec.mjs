@@ -29,7 +29,7 @@ const schreibeDatei = (obj) => writeFileSync(join(server.support, "einstellungen
 const shots = () => { const d = process.env.UI_SHOTS || "screenshots"; mkdirSync(d, { recursive: true }); return d; };
 
 // ---------------------------------------------------------------- Kontrast
-test("Kontrast je Schema und Akzent: Text, Zweittext, Akzent, Text auf Akzent, Ränder ≥ WCAG AA", async ({ page }) => {
+test("Kontrast je Schema und Akzent: Text, Zweit- und Drittext (kleiner Text 4,5:1), Fokusring (3:1), Akzent, Text auf Akzent, Ränder ≥ WCAG AA", async ({ page }) => {
   await start(page);
   const r = await page.evaluate(async () => {
     const m = await import("/darstellung.js");
@@ -48,10 +48,18 @@ test("Kontrast je Schema und Akzent: Text, Zweittext, Akzent, Text auf Akzent, R
       const fl = ["--papier", "--seite", "--erhoben"].map((t) => [t, rgba(t).slice(0, 3)]);
       const text = rgba("--text").slice(0, 3), text2 = rgba("--text-2").slice(0, 3), text3 = rgba("--text-3").slice(0, 3), ak = rgba("--akzent").slice(0, 3);
       const tinte = rgba("--akzent-tinte").slice(0, 3), auf = rgba("--akzent-text").slice(0, 3);
+      // R4-3: Fokusring (deckend, --fokus) ≥ 3:1 (WCAG 1.4.11) und kleiner Text (Zweit- und Drittext) ≥ 4,5:1 auf JEDER Fläche, auf der sie vorkommen (auch Hover und Auswahl)
+      const fokus = rgba("--fokus").slice(0, 3);
+      for (const t of ["--papier", "--seite", "--erhoben", "--hover", "--auswahl"]) {
+        const bg = rgba(t).slice(0, 3);
+        pruefe(`Fokusring auf ${t} ${k}`, kon(fokus, bg), 3);
+        pruefe(`Kleiner Zweittext auf ${t} ${k}`, kon(text2, bg), 4.5);
+        pruefe(`Kleiner Drittext auf ${t} ${k}`, kon(text3, bg), 4.5);
+      }
       for (const [t, bg] of fl) {
         pruefe(`Text auf ${t} ${k}`, kon(text, bg), 4.5);
         pruefe(`Zweittext auf ${t} ${k}`, kon(text2, bg), 4.5);
-        pruefe(`Drittext auf ${t} ${k}`, kon(text3, bg), 3);
+        pruefe(`Drittext auf ${t} ${k}`, kon(text3, bg), 4.5);
         pruefe(`Akzent als Text auf ${t} ${k}`, kon(ak, bg), 4.5);
         if (t !== "--erhoben") pruefe(`Akzenttinte auf ${t} ${k}`, kon(tinte, bg), 4.5);
       }

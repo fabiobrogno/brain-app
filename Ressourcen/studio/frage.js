@@ -10,6 +10,7 @@ import { rendereMarkdown } from "./frage-markdown.js";
 import { auswahl, segment, textbereich, knopf as baueKnopf } from "./bausteine.js";
 import { worteEinblenden } from "./bewegung.js";
 import { windungLaden } from "./windung.js";
+import { merkeFokus, gibFokus } from "./tastatur.js"; // R4-3: Fokus beim Öffnen merken, beim Schließen zurückgeben
 import { kontingentStand, kontingentKompakt, kontoAnsicht, optionSub, FRAGE_KONTO_EREIGNIS } from "./kontingent.js";
 
 const wartePause = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -32,7 +33,7 @@ export function erzeugeFragePanel(z) {
   const ausgabe = h("div", { klasse: "frage-ausgabe", "data-frage": "ausgabe" });
   const rumpf = h("div", { klasse: "frage-rumpf", "data-kanten": true }, leer, formular, ausgabe);
   const fuss = h("footer", { klasse: "frage-fuss", "data-frage": "fuss" }, symbol("schild", 12), h("span", { text: `${TF.nichtGespeichert} ${TF.nurLesen}` }));
-  const panel = h("aside", { id: "frage", klasse: "frage", role: "complementary", "aria-labelledby": "frage-titel", inert: true, "data-frage": "panel" }, kopf, rumpf, fuss);
+  const panel = h("aside", { id: "frage", klasse: "frage", role: "complementary", "aria-labelledby": "frage-titel", tabindex: "-1", inert: true, "data-frage": "panel" }, kopf, rumpf, fuss);
   host.replaceChildren(panel);
   rumpf.addEventListener("scroll", () => { fixiert = rumpf.scrollHeight - rumpf.scrollTop - rumpf.clientHeight < 40; });
 
@@ -265,16 +266,19 @@ export function erzeugeFragePanel(z) {
   function oeffne() {
     if (!z.vaultPfad()) return;
     if (offen) return;
+    merkeFokus("frage");
     offen = true; panel.inert = false; z.beiUmschalten?.(true); document.getElementById("app")?.setAttribute("data-frage", "an"); knopfZustand();
     fixiert = true;
     ladeBereit();
+    // Der Fokus geht immer ins Panel (auch ohne Konto, wo es kein Feld gibt): erst das Feld, sonst der erste Knopf, sonst das Panel selbst
+    setTimeout(() => { if (offen && !panel.contains(document.activeElement)) (formular.querySelector("textarea") || panel.querySelector("button:not([disabled]), [href], input, [tabindex]:not([tabindex='-1'])") || panel).focus({ preventScroll: true }); }, 80);
     setTimeout(() => formular.querySelector("textarea")?.focus(), 0);
   }
   function schliesse() {
     if (!offen) return;
     if (lauf && !lauf.fertig) abbrechen(); // ein Fenster, das zu ist, fragt nicht weiter
     offen = false; panel.inert = true; z.beiUmschalten?.(false); document.getElementById("app")?.removeAttribute("data-frage"); knopfZustand();
-    document.getElementById("knopf-frage")?.focus();
+    gibFokus("frage", document.getElementById("knopf-frage"));
   }
   const umschalten = () => (offen ? schliesse() : oeffne());
   // Esc: läuft eine Frage, bricht es sie ab, sonst schließt es das Panel — wenn der Fokus im Panel oder nirgends ist und kein Dialog offen ist
@@ -301,5 +305,5 @@ export function erzeugeFragePanel(z) {
     if (!lauf && bereit) zeichneRumpf();
     setTimeout(() => { const f = formular.querySelector("textarea"); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); } }, 0);
   }
-  return { oeffne, oeffneMit, schliesse, umschalten, zuruecksetzen, istOffen: () => offen, laeuft: () => !!(lauf && !lauf.fertig) };
+  return { oeffne, oeffneMit, schliesse, abbrechen, umschalten, zuruecksetzen, istOffen: () => offen, laeuft: () => !!(lauf && !lauf.fertig) };
 }

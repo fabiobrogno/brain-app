@@ -235,7 +235,7 @@ test("Ein Eintrag mit „ki: nein“: KI-Knopf aus mit Grund, nie gesendet; „F
   szenario({ szenario: "ok" });
   await zumPosteingang(page);
   await expect(kiKnopf(page, NEIN)).toBeDisabled();
-  await expect(kiKnopf(page, NEIN)).toHaveAttribute("title", /ki: nein/);
+  await expect(kiKnopf(page, NEIN)).toHaveAttribute("data-tipp-text", /ki: nein/);
   await page.locator('[data-aktion="pk-alle"]').click();
   await expect(page.locator("[data-pk-stapel-text]")).toContainText("Fertig", { timeout: 30000 });
   expect(aufrufe().length).toBe(5);
